@@ -1,0 +1,16 @@
+[Unit]
+Description=Pi-Dashcam Mobile Web Dashboard Service
+Documentation=https://github.com/
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/pi-dashcam/web
+ExecStart=/usr/bin/python3 /opt/pi-dashcam/web/app.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

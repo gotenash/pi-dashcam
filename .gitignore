@@ -1,0 +1,16 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+
+# Video files (local recordings)
+*.mp4
+*.h264
+/var/media/dashcam/
+
+# OS generated files
+.DS_Store
+Thumbs.db

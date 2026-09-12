@@ -1,0 +1,17 @@
+[Unit]
+Description=Pi-Dashcam UPS-Lite Power Monitor & Safe Shutdown
+Documentation=https://github.com/
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/power_monitor.py
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

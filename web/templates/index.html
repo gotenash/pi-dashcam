@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pi-Dashcam | Contrôle Mobile</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- En-tête -->
+        <header class="app-header">
+            <div class="header-left">
+                <span class="logo-icon">🚗</span>
+                <div class="logo-text">
+                    <h1>Pi-Dashcam</h1>
+                    <span class="host-tag">Raspberry Pi Zero 2 W</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div id="rec-badge" class="badge badge-rec">
+                    <span class="pulse-dot"></span>
+                    <span id="rec-text">REC</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation par onglets (Touch-friendly) -->
+        <nav class="nav-tabs">
+            <button class="tab-btn active" data-tab="tab-dashboard">
+                <span class="tab-icon">📊</span>
+                <span class="tab-label">Tableau de bord</span>
+            </button>
+            <button class="tab-btn" data-tab="tab-preview">
+                <span class="tab-icon">📸</span>
+                <span class="tab-label">Cadrage</span>
+            </button>
+            <button class="tab-btn" data-tab="tab-videos">
+                <span class="tab-icon">🎬</span>
+                <span class="tab-label">Vidéos</span>
+            </button>
+            <button class="tab-btn" data-tab="tab-settings">
+                <span class="tab-icon">⚙️</span>
+                <span class="tab-label">Réglages</span>
+            </button>
+        </nav>
+
+        <!-- Contenu des onglets -->
+        <main class="main-content">
+            <!-- ONGLET 1 : TABLEAU DE BORD -->
+            <section id="tab-dashboard" class="tab-content active">
+                <!-- Statut Enregistrement & Action Rapide -->
+                <div class="card status-banner-card">
+                    <div class="status-banner-content">
+                        <div>
+                            <div class="card-label">Statut Caméra</div>
+                            <div id="recording-status-title" class="status-big-text">Enregistrement actif</div>
+                            <div id="last-update" class="status-subtext">Synchronisation...</div>
+                        </div>
+                        <button id="btn-toggle-rec" class="btn btn-warning" onclick="toggleRecording()">
+                            Arrêter
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Grille des métriques -->
+                <div class="grid-2">
+                    <!-- Batterie & Alimentation -->
+                    <div class="card metric-card">
+                        <div class="card-header">
+                            <span class="metric-icon">🔋</span>
+                            <span class="card-title">Alimentation & UPS</span>
+                        </div>
+                        <div class="metric-value-container">
+                            <span id="battery-percent" class="metric-value">-- %</span>
+                            <span id="battery-voltage" class="metric-sub">-- V</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div id="battery-bar" class="progress-bar-fill" style="width: 0%;"></div>
+                        </div>
+                        <div id="power-source-tag" class="status-pill status-usb">
+                            ⚡ USB 12V Branché
+                        </div>
+                    </div>
+
+                    <!-- Espace Stockage MicroSD -->
+                    <div class="card metric-card">
+                        <div class="card-header">
+                            <span class="metric-icon">💾</span>
+                            <span class="card-title">Espace Disque</span>
+                        </div>
+                        <div class="metric-value-container">
+                            <span id="disk-percent" class="metric-value">-- %</span>
+                            <span id="disk-free" class="metric-sub">-- Go libres</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div id="disk-bar" class="progress-bar-fill" style="width: 0%;"></div>
+                        </div>
+                        <div class="metric-footer">
+                            <span id="disk-used-total">-- / -- Go</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Informations système secondaires -->
+                <div class="card info-card">
+                    <div class="info-row">
+                        <span class="info-label">🌡️ Température CPU :</span>
+                        <span id="cpu-temp" class="info-value">-- °C</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">🛡️ Surveillance batterie :</span>
+                        <span id="power-mon-status" class="info-value">Actif</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ONGLET 2 : CADRAGE CAMÉRA -->
+            <section id="tab-preview" class="tab-content">
+                <div class="card">
+                    <div class="card-header space-between">
+                        <span class="card-title">Aperçu Cadrage (160° FOV)</span>
+                        <button class="btn btn-secondary btn-sm" onclick="refreshSnapshot()">
+                            🔄 Actualiser
+                        </button>
+                    </div>
+                    <div class="preview-container">
+                        <img id="snapshot-img" src="/api/snapshot" alt="Aperçu caméra">
+                        <!-- Grille d'alignement pare-brise -->
+                        <div id="preview-grid" class="preview-grid">
+                            <div class="grid-line horizontal"></div>
+                            <div class="grid-line vertical"></div>
+                        </div>
+                    </div>
+                    <div class="preview-controls">
+                        <label class="toggle-container">
+                            <input type="checkbox" id="toggle-grid" checked onchange="toggleAlignmentGrid()">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label">Afficher la ligne d'horizon</span>
+                        </label>
+                    </div>
+                    <p class="card-tip">
+                        💡 Utilisez cet aperçu pour orienter la rotule de la caméra face au capot et à la ligne d'horizon.
+                    </p>
+                </div>
+            </section>
+
+            <!-- ONGLET 3 : GALERIE VIDÉOS -->
+            <section id="tab-videos" class="tab-content">
+                <div class="card">
+                    <div class="card-header space-between">
+                        <div>
+                            <span class="card-title">Clips Enregistrés</span>
+                            <span id="videos-count" class="badge badge-info">0</span>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="loadVideos()">
+                            🔄 Actualiser
+                        </button>
+                    </div>
+
+                    <div id="video-player-modal" class="video-player-container hidden">
+                        <div class="player-header">
+                            <span id="player-title">Lecture vidéo</span>
+                            <button class="close-player-btn" onclick="closePlayer()">✕</button>
+                        </div>
+                        <video id="html5-player" controls playsinline preload="metadata">
+                            Votre navigateur ne prend pas en charge la lecture MP4.
+                        </video>
+                    </div>
+
+                    <div id="videos-list" class="videos-list">
+                        <div class="loading-spinner">Chargement des vidéos...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ONGLET 4 : RÉGLAGES -->
+            <section id="tab-settings" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Paramètres de la Dashcam</span>
+                    </div>
+
+                    <form id="config-form" onsubmit="saveConfig(event)">
+                        <div class="form-group">
+                            <label for="cfg-duration">Durée des séquences vidéo</label>
+                            <select id="cfg-duration" name="SEGMENT_DURATION_SEC" class="form-control">
+                                <option value="60">1 minute</option>
+                                <option value="180" selected>3 minutes (recommandé)</option>
+                                <option value="300">5 minutes</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="cfg-resolution">Définition & Fréquence</label>
+                            <select id="cfg-resolution" class="form-control" onchange="updateResolutionInputs(this.value)">
+                                <option value="1080p30" selected>Full HD 1080p @ 30 fps (optimal)</option>
+                                <option value="720p30">HD 720p @ 30 fps (économique)</option>
+                            </select>
+                            <input type="hidden" id="cfg-width" name="VIDEO_WIDTH" value="1920">
+                            <input type="hidden" id="cfg-height" name="VIDEO_HEIGHT" value="1080">
+                            <input type="hidden" id="cfg-fps" name="VIDEO_FPS" value="30">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="cfg-delay">Délai d'extinction après coupure contact</label>
+                            <select id="cfg-delay" name="SHUTDOWN_DELAY_SEC" class="form-control">
+                                <option value="15">15 secondes</option>
+                                <option value="30" selected>30 secondes (recommandé)</option>
+                                <option value="60">60 secondes</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="cfg-disk-max">Seuil max d'espace disque (%)</label>
+                            <select id="cfg-disk-max" name="MAX_DISK_USAGE_PERCENT" class="form-control">
+                                <option value="80">80 %</option>
+                                <option value="85" selected>85 % (recommandé)</option>
+                                <option value="90">90 %</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block">
+                            💾 Enregistrer les réglages
+                        </button>
+                    </form>
+
+                    <hr class="divider">
+
+                    <button class="btn btn-outline btn-block" onclick="restartDashcamService()">
+                        🔄 Redémarrer l'enregistrement
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Notification Toast -->
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

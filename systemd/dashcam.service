@@ -1,0 +1,18 @@
+[Unit]
+Description=Pi-Dashcam Continuous Video Recording Service
+Documentation=https://github.com/
+After=multi-user.target
+RequiresMountsFor=/var/media/dashcam
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/dashcam.sh
+KillSignal=SIGINT
+TimeoutStopSec=20
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
