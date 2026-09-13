@@ -65,7 +65,7 @@ class EPaperDashboard:
         self.running = True
         self.full_refresh_counter = 0
 
-        # Capteur UPS I2C uniquement (pas de conflit GPIO)
+        # Capteur UPS I2C et détection d'alimentation
         self.ups = None
         if MAX17040:
             try:
@@ -75,6 +75,16 @@ class EPaperDashboard:
                 )
             except Exception:
                 self.ups = None
+
+        self.power_detector = None
+        if PowerInputDetector:
+            try:
+                self.power_detector = PowerInputDetector(
+                    pin=self.config.get("POWER_DETECT_PIN", 4),
+                    active_low=bool(self.config.get("POWER_DETECT_ACTIVE_LOW", 0))
+                )
+            except Exception:
+                self.power_detector = None
 
         # Polices
         self.font_large = get_font(16, bold=True)
@@ -134,7 +144,14 @@ class EPaperDashboard:
                 v, pct = self.ups.read_status()
             except Exception:
                 pass
-        ext = bool(v >= 4.05 or pct >= 95.0)
+        ext = None
+        if self.power_detector:
+            try:
+                ext = self.power_detector.is_external_power_connected()
+            except Exception:
+                pass
+        if ext is None:
+            ext = bool(v >= 4.02)
         return round(v, 2), round(pct, 0), ext
 
     def render_dashboard(self) -> Image.Image:

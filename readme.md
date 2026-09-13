@@ -94,6 +94,7 @@ Il n'y a **strictement aucun conflit de broches** entre les deux cartes :
 | **UPS-Lite V1.2** | Pin 6 | `GND` | Masse |
 | **UPS-Lite V1.2** | Pin 3 | `GPIO 2 (SDA)` | Ligne de données I2C (MAX17040G, `0x36`) |
 | **UPS-Lite V1.2** | Pin 5 | `GPIO 3 (SCL)` | Ligne d'horloge I2C |
+| **UPS-Lite V1.2** | Pin 7 | `GPIO 4` | Détection USB 5V (1 = Branché, 0 = Débranché) via pont de soudure |
 | **e-Paper HAT V4** | Pin 1 | `3.3V` | Alimentation logique de l'écran |
 | **e-Paper HAT V4** | Pin 9 | `GND` | Masse écran |
 | **e-Paper HAT V4** | Pin 19 | `GPIO 10 (MOSI)` | Données SPI |
@@ -103,13 +104,18 @@ Il n'y a **strictement aucun conflit de broches** entre les deux cartes :
 | **e-Paper HAT V4** | Pin 11 | `GPIO 17` | Reset matériel écran (RST) |
 | **e-Paper HAT V4** | Pin 18 | `GPIO 24` | Détection d'état occupé (BUSY) |
 
-> [!NOTE]
-> **Détection d'alimentation UPS-Lite V1.2 sans fil additionnel** :
-> L'UPS-Lite V1.2 ne possède que **4 pogo-pins** (5V, GND, SDA, SCL) et **aucune broche sur le GPIO 4**. 
-> La détection du branchement USB 5V s'effectue automatiquement via la **tension mesurée par la jauge I2C MAX17040G** :
-> - **Sous alimentation USB 5V** : le chargeur interne maintient la tension de floating de la batterie LiPo à **$\ge 4.02\text{ V}$** (généralement entre 4.05V et 4.20V).
-> - **Sur batterie (5V débranché)** : sous la charge du Pi Zero 2 W (~450 mA avec caméra et Wi-Fi), la tension de la cellule chute sous **$4.02\text{ V}$**.
-> Ce mécanisme permet une détection 100% logicielle, sans aucune soudure ni fil externe à tirer.
+> [!TIP]
+> **Activation de la détection d'alimentation USB (Soudure UPS-Lite V1.2)** :
+> D'usine, le circuit de détection du chargeur n'est pas relié au GPIO 4 pour laisser la broche libre si non utilisée.
+> Pour activer la détection instantanée de coupure contact :
+> 1. Démontez l'UPS-Lite. Au dos du circuit imprimé (côté composants), repérez les **deux petits plots cuivrés (pads) côte à côte étiquetés PAD1 / PAD2** (proches de la prise micro-USB de charge).
+> 2. Déposez une **petite goutte d'étain** pour relier (ponter) ces deux plots.
+> 3. Remontez l'UPS-Lite sur le Pi Zero.
+> 
+> Dès cet instant :
+> - **5V USB branché** : le GPIO 4 passe à **`1` (HIGH)**.
+> - **5V USB débranché** : le GPIO 4 retombe immédiatement à **`0` (LOW)**.
+> La détection est instantanée, insensible au niveau de charge de la batterie, et permet de déclencher l'extinction propre à la seconde près.
 
 > [!IMPORTANT]
 > **Connexion de la nappe caméra** : Sur le connecteur CSI du Pi Zero, insérez la nappe délicatement avec les **pistes dorées orientées vers la face inférieure** (vers le circuit imprimé du Pi, face opposée au loquet noir).

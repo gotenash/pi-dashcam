@@ -23,7 +23,7 @@ DEFAULTS = {
     "UPS_I2C_BUS": 1,
     "UPS_I2C_ADDR": 0x36,
     "POWER_DETECT_PIN": 4,
-    "POWER_DETECT_ACTIVE_LOW": 1,
+    "POWER_DETECT_ACTIVE_LOW": 0,
     "ENABLE_AUTO_SHUTDOWN": 0,
     "SHUTDOWN_DELAY_SEC": 30,
     "CRITICAL_BATTERY_PERCENT": 10.0,
@@ -141,45 +141,103 @@ class MAX17040:
 class PowerInputDetector:
     """
     Gestionnaire pour la détection de présence d'alimentation externe (GPIO 4 sur UPS-Lite V1.2).
-    Sur UPS-Lite V1.2 (Active LOW) :
-    LOW (0)  = Alimentation externe USB connectée.
-    HIGH (1) = Déconnecté, fonctionnement sur batterie.
+    Sur UPS-Lite V1.2 (avec les 2 pads pontés à l'étain au dos de la carte) :
+    HIGH (1) = Alimentation externe USB 5V connectée.
+    LOW (0)  = Déconnecté, fonctionnement sur batterie LiPo.
     """
-    def __init__(self, pin: int = 4, active_low: bool = True):
+    def __init__(self, pin: int = 4, active_low: bool = False):
         self.pin = pin
         self.active_low = active_low
-        self._device = None
+        self._method = None
+        self._h = None
+        self._line = None
         self._setup()
 
     def _setup(self):
+        # 1. Tenter lgpio (standard officiel Bookworm)
         try:
-            from gpiozero import DigitalInputDevice
-            # Lecture du signal matériel
-            self._device = DigitalInputDevice(self.pin, pull_up=False)
-        except Exception as e:
-            logging.warning(
-                "Impossible d'initialiser gpiozero sur GPIO %d: %s. Fallback RPi.GPIO...",
-                self.pin, e
-            )
+            import lgpio
+            self._h = lgpio.gpiochip_open(0)
+            lgpio.gpio_claim_input(self._h, self.pin)
+            self._method = "lgpio"
+            return
+        except Exception:
+            pass
+
+        # 2. Tenter gpiod
+        try:
+            import gpiod
+            chip = gpiod.Chip('gpiochip0')
+            self._line = chip.get_line(self.pin)
+            self._line.request(consumer="power_detect", type=gpiod.LINE_REQ_DIR_IN)
+            self._method = "gpiod"
+            return
+        except Exception:
+            pass
+
+        # 3. Fallback pinctrl natif Bookworm
+        import shutil
+        if shutil.which("pinctrl"):
+            self._method = "pinctrl"
+            return
+
+        # 4. Fallback RPi.GPIO
+        try:
+            import RPi.GPIO as GPIO
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(self.pin, GPIO.IN)
+            self._method = "rpi_gpio"
+            return
+        except Exception:
+            pass
+
+    def read_pin(self) -> Optional[int]:
+        """Lit l'état logique de la broche GPIO (0 ou 1)."""
+        if self._method == "lgpio" and self._h is not None:
+            try:
+                import lgpio
+                return int(lgpio.gpio_read(self._h, self.pin))
+            except Exception:
+                pass
+
+        if self._method == "gpiod" and self._line is not None:
+            try:
+                return int(self._line.get_value())
+            except Exception:
+                pass
+
+        if self._method == "rpi_gpio":
             try:
                 import RPi.GPIO as GPIO
-                GPIO.setmode(GPIO.BCM)
-                GPIO.setup(self.pin, GPIO.IN)
-                self._device = "RPI_GPIO"
-            except Exception as e2:
-                logging.error("Échec d'initialisation GPIO: %s", e2)
-                self._device = None
+                return int(GPIO.input(self.pin))
+            except Exception:
+                pass
+
+        # Lecture universelle via pinctrl (binaire natif Bookworm)
+        try:
+            res = subprocess.run(
+                ["pinctrl", "get", str(self.pin)],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            out = res.stdout.lower()
+            if "| hi" in out or " hi " in out:
+                return 1
+            elif "| lo" in out or " lo " in out:
+                return 0
+        except Exception:
+            pass
+
+        return None
 
     def is_external_power_connected(self) -> Optional[bool]:
-        """Retourne True si alimenté par USB externe, False sur batterie, None si indéterminé."""
-        if self._device is None:
+        """
+        Retourne True si alimenté par USB 5V, False sur batterie, None si indéterminé.
+        """
+        val = self.read_pin()
+        if val is None:
             return None
-        if self._device == "RPI_GPIO":
-            import RPi.GPIO as GPIO
-            val = GPIO.input(self.pin)
-        else:
-            val = self._device.value
-
         if self.active_low:
             return bool(val == 0)
         return bool(val == 1)

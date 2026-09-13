@@ -59,7 +59,7 @@ if PowerInputDetector:
     try:
         power_sensor = PowerInputDetector(
             pin=CONFIG.get("POWER_DETECT_PIN", 4),
-            active_low=bool(CONFIG.get("POWER_DETECT_ACTIVE_LOW", 1))
+            active_low=bool(CONFIG.get("POWER_DETECT_ACTIVE_LOW", 0))
         )
     except Exception:
         power_sensor = None
@@ -134,18 +134,17 @@ def api_status():
     else:
         battery_v, battery_pct = 4.10, 95.0
 
-    # 2. Détection alimentation externe (Optimisé pour UPS-Lite V1.2)
-    # L'UPS-Lite V1.2 n'a que 4 broches pogo (5V, GND, I2C). Le chargeur maintient la tension
-    # entre 4.08V et 4.20V quand l'USB est connecté.
-    if power_sensor and hasattr(power_sensor, 'has_physical_pin') and power_sensor.has_physical_pin:
+    # 2. Détection alimentation externe (GPIO 4 sur UPS-Lite V1.2 après soudure des pads)
+    ext_power = None
+    if power_sensor:
         try:
-            st = power_sensor.is_external_power_connected()
-            ext_power = st if st is not None else (battery_v >= 4.02)
+            ext_power = power_sensor.is_external_power_connected()
         except Exception:
-            ext_power = (battery_v >= 4.02)
-    else:
-        # Détection I2C directe sur la cellule LiPo
-        ext_power = bool(battery_v >= 4.02 or battery_pct >= 90.0)
+            ext_power = None
+
+    if ext_power is None:
+        # Fallback de secours si GPIO non lisible
+        ext_power = bool(battery_v >= 4.02)
 
     # 3. Métriques système
     disk = get_disk_statistics(storage_dir)
