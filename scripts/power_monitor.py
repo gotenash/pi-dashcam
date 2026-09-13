@@ -263,8 +263,10 @@ class PowerMonitorDaemon:
                     logging.warning("Erreur lecture I2C MAX17040: %s", e)
                     voltage, percent = 3.8, 50.0
 
-                # Détection alimentation externe
+                # Détection alimentation externe (avec fallback intelligent I2C pour UPS-Lite V1.2)
                 ext_power = self.power_detector.is_external_power_connected()
+                if ext_power is None:
+                    ext_power = bool(voltage >= 4.02 or percent >= 90.0)
                 now = time.time()
 
                 # Log d'état périodique (toutes les 60 secondes si stable)
