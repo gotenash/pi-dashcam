@@ -23,6 +23,7 @@ DEFAULTS = {
     "UPS_I2C_BUS": 1,
     "UPS_I2C_ADDR": 0x36,
     "POWER_DETECT_PIN": 4,
+    "POWER_DETECT_ACTIVE_LOW": 1,
     "ENABLE_AUTO_SHUTDOWN": 0,
     "SHUTDOWN_DELAY_SEC": 30,
     "CRITICAL_BATTERY_PERCENT": 10.0,
@@ -50,7 +51,7 @@ def load_config() -> Dict[str, Any]:
                             key = key.strip()
                             val = val.strip().strip('"').strip("'")
                             int_keys = (
-                                "UPS_I2C_BUS", "POWER_DETECT_PIN", "SHUTDOWN_DELAY_SEC",
+                                "UPS_I2C_BUS", "POWER_DETECT_PIN", "POWER_DETECT_ACTIVE_LOW", "SHUTDOWN_DELAY_SEC",
                                 "SEGMENT_DURATION_SEC", "VIDEO_WIDTH", "VIDEO_HEIGHT", "VIDEO_FPS",
                                 "VIDEO_BITRATE", "MAX_DISK_USAGE_PERCENT", "MIN_FREE_SPACE_MB", "WEB_PORT"
                             )
@@ -140,18 +141,20 @@ class MAX17040:
 class PowerInputDetector:
     """
     Gestionnaire pour la détection de présence d'alimentation externe (GPIO 4 sur UPS-Lite V1.2).
-    HIGH (1) = Alimentation externe USB connectée.
-    LOW (0)  = Déconnecté, fonctionnement sur batterie.
+    Sur UPS-Lite V1.2 (Active LOW) :
+    LOW (0)  = Alimentation externe USB connectée.
+    HIGH (1) = Déconnecté, fonctionnement sur batterie.
     """
-    def __init__(self, pin: int = 4):
+    def __init__(self, pin: int = 4, active_low: bool = True):
         self.pin = pin
+        self.active_low = active_low
         self._device = None
         self._setup()
 
     def _setup(self):
         try:
             from gpiozero import DigitalInputDevice
-            # UPS-Lite V1.2 tire la broche vers le haut quand l'alimentation est présente
+            # Lecture du signal matériel
             self._device = DigitalInputDevice(self.pin, pull_up=False)
         except Exception as e:
             logging.warning(
@@ -173,9 +176,13 @@ class PowerInputDetector:
             return None
         if self._device == "RPI_GPIO":
             import RPi.GPIO as GPIO
-            return bool(GPIO.input(self.pin) == 1)
-        # via gpiozero DigitalInputDevice
-        return bool(self._device.value == 1)
+            val = GPIO.input(self.pin)
+        else:
+            val = self._device.value
+
+        if self.active_low:
+            return bool(val == 0)
+        return bool(val == 1)
 
 
 class PowerMonitorDaemon:
@@ -186,7 +193,10 @@ class PowerMonitorDaemon:
             bus_num=config["UPS_I2C_BUS"],
             address=config["UPS_I2C_ADDR"]
         )
-        self.power_detector = PowerInputDetector(pin=config["POWER_DETECT_PIN"])
+        self.power_detector = PowerInputDetector(
+            pin=config["POWER_DETECT_PIN"],
+            active_low=bool(config.get("POWER_DETECT_ACTIVE_LOW", 1))
+        )
         self.shutdown_in_progress = False
 
     def handle_signal(self, signum, frame):

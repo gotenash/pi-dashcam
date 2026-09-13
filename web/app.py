@@ -57,7 +57,10 @@ if MAX17040:
 
 if PowerInputDetector:
     try:
-        power_sensor = PowerInputDetector(pin=CONFIG.get("POWER_DETECT_PIN", 4))
+        power_sensor = PowerInputDetector(
+            pin=CONFIG.get("POWER_DETECT_PIN", 4),
+            active_low=bool(CONFIG.get("POWER_DETECT_ACTIVE_LOW", 1))
+        )
     except Exception:
         power_sensor = None
 
