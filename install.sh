@@ -69,6 +69,7 @@ echo "=== 3. Configuration et répertoires système ==="
 mkdir -p /etc/pi-dashcam
 mkdir -p /var/media/dashcam
 mkdir -p /opt/pi-dashcam/web
+chmod 777 /var/media/dashcam
 
 if [ ! -f /etc/pi-dashcam/dashcam.conf ]; then
     echo "Copie du fichier de configuration par défaut vers /etc/pi-dashcam/dashcam.conf..."
