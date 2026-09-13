@@ -48,27 +48,14 @@ case "${1:-enable}" in
             nmcli connection delete "$HOTSPOT_CON_NAME" || true
         fi
 
-        # Création du profil de connexion Access Point (Hotspot)
-        log "Création du profil Wi-Fi AP..."
-        nmcli connection add \
-            type wifi \
+        # Création du profil de connexion Access Point (Hotspot) natif NetworkManager
+        log "Création du point d'accès Wi-Fi avec chiffrement WPA2 standard..."
+        nmcli device wifi hotspot \
             ifname wlan0 \
-            con-name "$HOTSPOT_CON_NAME" \
-            autoconnect yes \
-            ssid "$HOTSPOT_SSID"
+            ssid "$HOTSPOT_SSID" \
+            password "$HOTSPOT_PASS"
 
-        nmcli connection modify "$HOTSPOT_CON_NAME" \
-            802-11-wireless.mode ap \
-            802-11-wireless.band bg \
-            802-11-wireless-security.key-mgmt wpa-psk \
-            802-11-wireless-security.psk "$HOTSPOT_PASS" \
-            ipv4.method shared \
-            ipv4.addresses "${HOTSPOT_IP}/24" \
-            ipv6.method disabled
-
-        log "Démarrage du point d'accès Wi-Fi..."
-        nmcli connection up "$HOTSPOT_CON_NAME"
-        log "Point d'accès actif avec succès ! Connectez votre smartphone au réseau '$HOTSPOT_SSID'."
+        log "Point d'accès configuré avec succès !"
         ;;
 
     disable|stop)

@@ -1,0 +1,17 @@
+[Unit]
+Description=Pi-Dashcam 2.13inch e-Paper HAT Status Display
+Documentation=https://github.com/
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/display_epaper.py
+Restart=always
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

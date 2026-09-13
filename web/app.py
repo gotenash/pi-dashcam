@@ -16,6 +16,7 @@ from flask import Flask, render_template, jsonify, request, send_from_directory,
 # Ajout du chemin scripts pour importer les pilotes
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(BASE_DIR, "scripts"))
+sys.path.insert(0, "/usr/local/bin")
 
 try:
     from power_monitor import MAX17040, PowerInputDetector, load_config

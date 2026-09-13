@@ -1,7 +1,8 @@
 [Unit]
 Description=Pi-Dashcam Mobile Web Dashboard Service
 Documentation=https://github.com/
-After=network.target
+After=network.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple

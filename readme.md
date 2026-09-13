@@ -9,7 +9,8 @@ Système de **dashcam automobile embarquée autonome et sécurisée**, conçu po
 - [Vue d'ensemble](#-vue-densemble)
 - [Matériel requis & Détails](#-matériel-requis--détails)
 - [Fonctionnement & Cycle de vie](#-fonctionnement--cycle-de-vie)
-- [Câblage & Broches GPIO](#-câblage--broches-gpio)
+- [Câblage & Broches GPIO (UPS + e-Paper)](#-câblage--broches-gpio-ups--e-paper)
+- [Écran e-Paper 2.13" V4](#-écran-e-paper-213-v4)
 - [Connexion Smartphone & Interface Web](#-connexion-smartphone--interface-web)
 - [Installation rapide](#-installation-rapide)
 - [Configuration (`dashcam.conf`)](#-configuration-dashcamconf)
@@ -23,9 +24,9 @@ Système de **dashcam automobile embarquée autonome et sécurisée**, conçu po
 Pi-Dashcam transforme un Raspberry Pi Zero 2 W en une caméra de bord moderne et connectée :
 - **Démarrage automatique** dès que le véhicule met le contact (alimentation USB de l'allume-cigare).
 - **Enregistrement continu par segments** (par défaut 3 minutes, 1080p @ 30 fps, H.264 matériel) sans perte d'images entre deux vidéos.
+- **Affichage dynamique e-Paper 2.13"** : affichage tête haute visible en plein soleil (statut REC, IP, % batterie, Go libres, T° CPU) et **écran persistant hors tension** à l'extinction sans consommer d'énergie.
 - **Gestion automatique de l'espace disque** : rotation circulaire supprimant les plus anciennes vidéos lorsque la carte SD dépasse 85% de remplissage.
 - **Extinction propre et sécurisée** : lors de la coupure du contact, l'UPS-Lite prend le relais sur batterie, accorde un délai de grâce (30 s), stoppe proprement l'enregistrement pour ne pas corrompre le conteneur MP4, synchronise les écritures disque (`sync`) puis éteint le Pi (`shutdown`).
-- **Protection matérielle LiPo** : extinction d'urgence immédiate si la batterie passe sous les 10% ou 3.40 V.
 - **Point d'accès Wi-Fi & Interface Web Mobile** : connectez directement votre smartphone (iOS / Android) en Wi-Fi dans votre voiture pour consulter la télémétrie en direct, vérifier le cadrage, modifier les réglages et visionner ou télécharger les vidéos enregistrées !
 
 ---
@@ -35,11 +36,12 @@ Pi-Dashcam transforme un Raspberry Pi Zero 2 W en une caméra de bord moderne et
 | Composant | Description | Rôle |
 | :--- | :--- | :--- |
 | **Raspberry Pi Zero 2 W** | Processeur 64-bit quad-core, Wi-Fi/Bluetooth | Unité centrale & encodage matériel H.264 |
-| **UPS-Lite V1.2** | Carte d'extension d'alimentation avec batterie LiPo | Maintien temporaire et coupure propre |
+| **UPS-Lite V1.2** | Carte d'extension d'alimentation avec batterie LiPo | Maintien temporaire et coupure propre (I2C) |
+| **Waveshare 2.13" e-Paper V4** | Écran à encre électronique 250x122 pixels (SPI) | Affichage tête haute et écran d'arrêt persistant |
 | **MAX17040G** | Puce jauge de batterie I2C embarquée sur l'UPS-Lite | Télémétrie tension (V) et pourcentage (%) |
 | **Caméra 160° FOV** | Module caméra grand angle CSI avec nappe étroite Pi Zero | Capture vidéo panoramique de la route |
 | **Boîtier & Support 3D** | Boîtier pour Pi Zero + support orientable caméra | Maintien mécanique et fixation pare-brise |
-| **Carte MicroSD** | Carte haute endurance (ex. SanDisk High Endurance / Max Endurance) | Stockage du système et des vidéos |
+| **Carte MicroSD** | Carte haute endurance (ex. SanDisk High Endurance) | Stockage du système et des vidéos |
 
 ---
 
@@ -118,6 +120,32 @@ Le module **UPS-Lite V1.2** se monte sous le Raspberry Pi Zero grâce à ses bro
 
 > [!IMPORTANT]
 > **Connexion de la nappe caméra** : Sur le connecteur CSI du Pi Zero, insérez la nappe délicatement avec les **pistes dorées orientées vers la face inférieure** (vers le circuit imprimé du Pi, face opposée au loquet noir).
+
+---
+
+## 📟 Écran e-Paper 2.13" V4
+
+L'écran à encre électronique **Waveshare 2.13inch e-Paper HAT (V4)** offre une lisibilité parfaite en plein soleil et conserve son affichage même lorsque le contact est coupé et que le Pi est totalement éteint.
+
+### Brochage SPI de l'écran e-Paper :
+
+| Broche e-Paper | Broche Physique Pi | Broche BCM | Rôle |
+| :--- | :--- | :--- | :--- |
+| **VCC** | Pin 1 | 3.3V | Alimentation 3.3V |
+| **GND** | Pin 6 | GND | Masse |
+| **DIN** | Pin 19 | GPIO 10 (MOSI) | Données SPI |
+| **CLK** | Pin 23 | GPIO 11 (SCLK) | Horloge SPI |
+| **CS** | Pin 24 | GPIO 8 (CE0) | Sélection de puce SPI |
+| **DC** | Pin 22 | GPIO 25 | Commande / Données |
+| **RST** | Pin 11 | GPIO 17 | Reset matériel |
+| **BUSY** | Pin 18 | GPIO 24 | Détection occupation de l'écran |
+
+> [!TIP]
+> **Compatibilité totale** : L'UPS-Lite utilise **I2C (GPIO 2 & 3)** + **GPIO 4**. L'écran e-Paper utilise **SPI (GPIO 8, 10, 11)** + **GPIO 17, 24, 25**. Il n'y a **aucun conflit de broches** !
+
+### Ce qui est affiché :
+- **En conduite** : Badge `[● REC]`, heure, IP Wi-Fi (`10.42.0.1`), tension et % batterie, espace libre carte SD avec jauge graphique, température CPU.
+- **À l'extinction** : L'écran bascule sur un écran persistant *"PI-DASHCAM ÉTEINT - Arrêt sécurisé terminé"*, qui reste affiché indéfiniment sur votre pare-brise à 0 Watt de consommation.
 
 ---
 

@@ -23,6 +23,7 @@ DEFAULTS = {
     "UPS_I2C_BUS": 1,
     "UPS_I2C_ADDR": 0x36,
     "POWER_DETECT_PIN": 4,
+    "ENABLE_AUTO_SHUTDOWN": 0,
     "SHUTDOWN_DELAY_SEC": 30,
     "CRITICAL_BATTERY_PERCENT": 10.0,
     "CRITICAL_BATTERY_VOLTAGE": 3.40,
@@ -265,32 +266,41 @@ class PowerMonitorDaemon:
                     )
                     last_log_time = now
 
+                # Vérification si l'extinction automatique est activée
+                auto_shutdown_enabled = bool(self.config.get("ENABLE_AUTO_SHUTDOWN", 0))
+
                 # 1. Vérification seuil d'urgence absolu (protection LiPo)
                 if (percent <= self.config["CRITICAL_BATTERY_PERCENT"] or 
                     voltage <= self.config["CRITICAL_BATTERY_VOLTAGE"]):
-                    self.initiate_safe_shutdown(
-                        f"Batterie critique (SOC={percent:.1f}%, U={voltage:.2f}V)"
-                    )
-                    break
+                    if auto_shutdown_enabled:
+                        self.initiate_safe_shutdown(
+                            f"Batterie critique (SOC={percent:.1f}%, U={voltage:.2f}V)"
+                        )
+                        break
+                    else:
+                        logging.warning("Batterie critique mais extinction automatique désactivée (ENABLE_AUTO_SHUTDOWN=0).")
 
                 # 2. Gestion de la perte d'alimentation externe
                 if ext_power is False:
                     if countdown_start is None:
                         countdown_start = now
-                        logging.warning(
-                            "Alimentation externe coupée ! Compte à rebours avant extinction : %d secondes.",
-                            self.config["SHUTDOWN_DELAY_SEC"]
-                        )
+                        if auto_shutdown_enabled:
+                            logging.warning(
+                                "Alimentation externe coupée ! Compte à rebours avant extinction : %d secondes.",
+                                self.config["SHUTDOWN_DELAY_SEC"]
+                            )
+                        else:
+                            logging.info("Alimentation externe coupée (extinction désactivée, fonctionnement continu).")
 
                     elapsed = now - countdown_start
                     remaining = self.config["SHUTDOWN_DELAY_SEC"] - elapsed
 
-                    if remaining <= 0:
+                    if auto_shutdown_enabled and remaining <= 0:
                         self.initiate_safe_shutdown(
                             f"Fin du compte à rebours d'extinction ({self.config['SHUTDOWN_DELAY_SEC']}s après coupure contact)"
                         )
                         break
-                    else:
+                    elif auto_shutdown_enabled:
                         # Log du décompte toutes les 5 secondes
                         if int(elapsed) % 5 == 0:
                             logging.warning(
