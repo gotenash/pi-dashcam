@@ -21,7 +21,7 @@ DEFAULT_CONFIG_PATHS = [
 
 DEFAULTS = {
     "UPS_I2C_BUS": 1,
-    "UPS_I2C_ADDR": 0x36,
+    "UPS_I2C_ADDR": 0x32,
     "ENABLE_AUTO_SHUTDOWN": 0,
     "PARKING_SHUTDOWN_BATTERY_PERCENT": 85.0,
     "PARKING_MAX_DURATION_SEC": 600,
@@ -83,19 +83,17 @@ def load_config() -> Dict[str, Any]:
     return config
 
 
-class MAX17040:
+class UPSSensor:
     """
-    Pilote pour la jauge de batterie MAX17040 / MAX17040G (I2C adresse par défaut 0x36).
+    Pilote universel auto-détecté pour modules UPS-Lite :
+    - CellWise CW2015 / CW2017 (I2C adresse 0x32)
+    - Maxim MAX17040 / MAX17040G (I2C adresse 0x36)
     """
-    REG_VCELL = 0x02
-    REG_SOC = 0x04
-    REG_MODE = 0x06
-    REG_CONFIG = 0x0C
-    REG_COMMAND = 0xFE
-
-    def __init__(self, bus_num: int = 1, address: int = 0x36):
+    def __init__(self, bus_num: int = 1, address: Optional[int] = None):
         self.bus_num = bus_num
-        self.address = address
+        self.configured_addr = address
+        self.active_addr = None
+        self.chip_type = None  # 'CW2015' ou 'MAX17040'
         self._bus = None
 
     def connect(self):
@@ -111,6 +109,34 @@ class MAX17040:
                     "Aucun module smbus disponible. Installez python3-smbus2 ou python3-smbus."
                 )
 
+        # Prober les adresses candidates : configurée d'abord, puis 0x32 et 0x36
+        candidates = []
+        if self.configured_addr:
+            candidates.append(self.configured_addr)
+        for a in [0x32, 0x36]:
+            if a not in candidates:
+                candidates.append(a)
+
+        for addr in candidates:
+            try:
+                self._bus.read_byte_data(addr, 0x02)
+                self.active_addr = addr
+                if addr == 0x32:
+                    self.chip_type = "CW2015"
+                    # Réveil / QuickStart si nécessaire
+                    try:
+                        self._bus.write_word_data(0x32, 0x0A, 0x30)
+                    except Exception:
+                        pass
+                else:
+                    self.chip_type = "MAX17040"
+                break
+            except Exception:
+                continue
+
+        if not self.active_addr:
+            raise RuntimeError("Aucune jauge de batterie détectée sur le bus I2C (adresses testées : 0x32, 0x36).")
+
     def close(self):
         if self._bus is not None:
             try:
@@ -120,25 +146,44 @@ class MAX17040:
             self._bus = None
 
     def read_voltage(self) -> float:
-        """Retourne la tension de la cellule LiPo en Volts (résolution 1.25 mV)."""
-        if self._bus is None:
-            self.connect()
-        # Lecture de 2 octets en mode bloc
-        data = self._bus.read_i2c_block_data(self.address, self.REG_VCELL, 2)
-        raw = (data[0] << 4) | (data[1] >> 4)
-        return raw * 0.00125
+        """Retourne la tension réelle de la cellule LiPo en Volts."""
+        v, _ = self.read_status()
+        return v
 
     def read_percentage(self) -> float:
-        """Retourne l'état de charge (SOC) en pourcentage (0.0% à 100.0%)."""
-        if self._bus is None:
-            self.connect()
-        data = self._bus.read_i2c_block_data(self.address, self.REG_SOC, 2)
-        percent = data[0] + (data[1] / 256.0)
-        return max(0.0, min(100.0, percent))
+        """Retourne la charge restante (SOC) en pourcentage (0 à 100%)."""
+        _, pct = self.read_status()
+        return pct
 
     def read_status(self) -> Tuple[float, float]:
         """Retourne un tuple (tension_V, pourcentage_SOC)."""
-        return self.read_voltage(), self.read_percentage()
+        if self._bus is None or self.active_addr is None:
+            self.connect()
+
+        if self.chip_type == "CW2015":
+            # CW2015 : tension sur 14 bits décalée de 2 bits (LSB = 0.305 mV)
+            d_v = self._bus.read_i2c_block_data(self.active_addr, 0x02, 2)
+            raw_v = ((d_v[0] << 8) | d_v[1]) >> 2
+            voltage = raw_v * 0.305 / 1000.0
+
+            # Capacité SOC : reg 0x04 (entier) + reg 0x05 (fraction / 256)
+            d_c = self._bus.read_i2c_block_data(self.active_addr, 0x04, 2)
+            percent = d_c[0] + (d_c[1] / 256.0)
+            return round(voltage, 2), round(max(0.0, min(100.0, percent)), 1)
+        else:
+            # MAX17040 : tension sur 12 bits (LSB = 1.25 mV)
+            data = self._bus.read_i2c_block_data(self.active_addr, 0x02, 2)
+            raw = (data[0] << 4) | (data[1] >> 4)
+            voltage = raw * 0.00125
+
+            # SOC : reg 0x04 + reg 0x05 / 256
+            data_soc = self._bus.read_i2c_block_data(self.active_addr, 0x04, 2)
+            percent = data_soc[0] + (data_soc[1] / 256.0)
+            return round(voltage, 2), round(max(0.0, min(100.0, percent)), 1)
+
+
+# Alias pour rétrocompatibilité
+MAX17040 = UPSSensor
 
 
 class PowerMonitorDaemon:
