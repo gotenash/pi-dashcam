@@ -52,7 +52,8 @@ def load_config() -> Dict[str, Any]:
                             int_keys = (
                                 "UPS_I2C_BUS", "PARKING_MAX_DURATION_SEC", "SHUTDOWN_DELAY_SEC",
                                 "SEGMENT_DURATION_SEC", "VIDEO_WIDTH", "VIDEO_HEIGHT", "VIDEO_FPS",
-                                "VIDEO_BITRATE", "MAX_DISK_USAGE_PERCENT", "MIN_FREE_SPACE_MB", "WEB_PORT"
+                                "VIDEO_BITRATE", "MAX_DISK_USAGE_PERCENT", "MIN_FREE_SPACE_MB", "WEB_PORT",
+                                "VIDEO_ROTATION"
                             )
                             float_keys = (
                                 "PARKING_SHUTDOWN_BATTERY_PERCENT",

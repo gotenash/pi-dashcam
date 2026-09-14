@@ -34,6 +34,7 @@ except ImportError:
             "VIDEO_FPS": 30,
             "SHUTDOWN_DELAY_SEC": 30,
             "MAX_DISK_USAGE_PERCENT": 85,
+            "VIDEO_ROTATION": 0,
         }
     MAX17040 = None
 
@@ -321,8 +322,15 @@ def api_snapshot():
         cam_bin = "rpicam-still" if shutil.which("rpicam-still") else "libcamera-still"
         if shutil.which(cam_bin):
             try:
+                rot = int(CONFIG.get("VIDEO_ROTATION", 0))
+                if rot == 180:
+                    rot_args = ["--hflip", "--vflip"]
+                elif rot in (90, 270):
+                    rot_args = ["--rotation", str(rot)]
+                else:
+                    rot_args = []
                 subprocess.run(
-                    [cam_bin, "-t", "500", "-o", snapshot_path, "-n", "--width", "1280", "--height", "720"],
+                    [cam_bin, "-t", "500", "-o", snapshot_path, "-n", "--width", "1280", "--height", "720"] + rot_args,
                     timeout=3
                 )
                 if os.path.exists(snapshot_path):
@@ -362,6 +370,7 @@ def api_config():
         "VIDEO_BITRATE": int,
         "SHUTDOWN_DELAY_SEC": int,
         "MAX_DISK_USAGE_PERCENT": int,
+        "VIDEO_ROTATION": int,
     }
 
     try:

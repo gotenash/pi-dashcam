@@ -445,10 +445,12 @@ async function loadConfig() {
         const delayEl = document.getElementById("cfg-delay");
         const diskMaxEl = document.getElementById("cfg-disk-max");
         const resSelect = document.getElementById("cfg-resolution");
+        const rotationEl = document.getElementById("cfg-rotation");
 
         if (durationEl && cfg.SEGMENT_DURATION_SEC) durationEl.value = cfg.SEGMENT_DURATION_SEC;
         if (delayEl && cfg.SHUTDOWN_DELAY_SEC) delayEl.value = cfg.SHUTDOWN_DELAY_SEC;
         if (diskMaxEl && cfg.MAX_DISK_USAGE_PERCENT) diskMaxEl.value = cfg.MAX_DISK_USAGE_PERCENT;
+        if (rotationEl && cfg.VIDEO_ROTATION !== undefined) rotationEl.value = cfg.VIDEO_ROTATION;
 
         if (resSelect && cfg.VIDEO_HEIGHT) {
             resSelect.value = cfg.VIDEO_HEIGHT >= 1080 ? "1080p30" : "720p30";
@@ -485,6 +487,7 @@ async function saveConfig(event) {
         VIDEO_WIDTH: parseInt(formData.get("VIDEO_WIDTH")),
         VIDEO_HEIGHT: parseInt(formData.get("VIDEO_HEIGHT")),
         VIDEO_FPS: parseInt(formData.get("VIDEO_FPS")),
+        VIDEO_ROTATION: parseInt(formData.get("VIDEO_ROTATION") || 0),
         SHUTDOWN_DELAY_SEC: parseInt(formData.get("SHUTDOWN_DELAY_SEC")),
         MAX_DISK_USAGE_PERCENT: parseInt(formData.get("MAX_DISK_USAGE_PERCENT")),
     };
@@ -498,11 +501,29 @@ async function saveConfig(event) {
         const data = await res.json();
         if (data.success) {
             showToast("Réglages enregistrés avec succès !");
+            if (confirm("Réglages enregistrés ! Voulez-vous redémarrer l'enregistrement vidéo pour appliquer la nouvelle orientation immédiatement ?")) {
+                restartDashcamServiceDirect();
+            }
         } else {
             showToast(data.error || "Erreur de sauvegarde", true);
         }
     } catch (err) {
         showToast("Erreur de communication", true);
+    }
+}
+
+async function restartDashcamServiceDirect() {
+    try {
+        const res = await fetch("/api/action/restart-dashcam", { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+            showToast("Dashcam redémarrée avec la nouvelle orientation !");
+            fetchStatus();
+        } else {
+            showToast(data.error || "Erreur lors du redémarrage", true);
+        }
+    } catch (err) {
+        showToast("Erreur réseau", true);
     }
 }
 

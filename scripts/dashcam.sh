@@ -145,6 +145,32 @@ log "  - Séquences  : ${SEGMENT_DURATION_SEC} secondes"
 log "  - Format     : MP4 Fragmenté (fMP4, résistant aux coupures)"
 log "  - Dossier    : ${STORAGE_DIR}"
 
+# Configuration de la rotation / orientation
+VIDEO_ROTATION="${VIDEO_ROTATION:-0}"
+CAM_ROT_ARGS=""
+FFMPEG_ROT_ARGS=()
+
+case "$VIDEO_ROTATION" in
+    180)
+        # 180° : inversion matérielle native via le capteur (0% CPU)
+        CAM_ROT_ARGS="--hflip --vflip"
+        log "  - Orientation: 180° (Inversé tête en bas)"
+        ;;
+    90)
+        # 90° : matrice de rotation MP4 dans ffmpeg (0% CPU)
+        FFMPEG_ROT_ARGS=("-metadata:s:v" "rotate=90")
+        log "  - Orientation: 90° (Sens horaire)"
+        ;;
+    270)
+        # 270° : matrice de rotation MP4 dans ffmpeg (0% CPU)
+        FFMPEG_ROT_ARGS=("-metadata:s:v" "rotate=270")
+        log "  - Orientation: 270° (Sens anti-horaire)"
+        ;;
+    *)
+        log "  - Orientation: 0° (Normal)"
+        ;;
+esac
+
 # Pipeline optimisé :
 # 1. rpicam-vid encode en H.264 matériel (0% CPU) et envoie le flux brut sur stdout
 # 2. ffmpeg lit le flux, n'effectue AUCUN réencodage (-c:v copy, <1% CPU), découpe
@@ -162,9 +188,11 @@ set -m # Active la gestion de groupe de processus pour tuer le pipeline propreme
         --height "$VIDEO_HEIGHT" \
         --framerate "$VIDEO_FPS" \
         --bitrate "$VIDEO_BITRATE" \
+        $CAM_ROT_ARGS \
         -o - | ffmpeg -hide_banner -loglevel error \
             -f h264 -i - \
             -c:v copy \
+            "${FFMPEG_ROT_ARGS[@]}" \
             -f segment \
             -segment_time "$SEGMENT_DURATION_SEC" \
             -segment_format mp4 \
