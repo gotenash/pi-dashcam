@@ -168,8 +168,7 @@ class EPaperDashboard:
         draw.text((6, 34), f"WiFi : {ip_addr}", font=self.font_med, fill=0)
 
         # Batterie
-        power_icon = "⚡" if ext_power else "🔋"
-        bat_str = f"{power_icon} {int(percent)}% ({voltage}V)"
+        bat_str = f"🔋 {int(percent)}% ({voltage}V)"
         draw.text((140, 34), bat_str, font=self.font_med, fill=0)
 
         # Ligne de séparation discrète

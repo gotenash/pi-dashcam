@@ -121,12 +121,7 @@ def api_status():
     else:
         battery_v, battery_pct = 4.10, 95.0
 
-    # 2. Détection alimentation / état de charge (Télémétrie I2C MAX17040G)
-    # Quand l'USB 5V est branché, le chargeur maintient la batterie à tension élevée (>= 4.08V)
-    # et charge max (>= 92%). En décharge sous la charge du Pi, la tension et le niveau descendent.
-    ext_power = bool(battery_v >= 4.08 and battery_pct >= 92.0)
-
-    # 3. Métriques système
+    # 2. Métriques système
     disk = get_disk_statistics(storage_dir)
     cpu_temp = get_cpu_temperature()
     is_recording = get_service_status("dashcam.service")
@@ -137,7 +132,6 @@ def api_status():
         "battery": {
             "voltage": battery_v,
             "percent": battery_pct,
-            "external_power": ext_power,
         },
         "system": {
             "cpu_temp": cpu_temp,

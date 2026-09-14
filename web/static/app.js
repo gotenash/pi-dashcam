@@ -84,12 +84,15 @@ function updateDashboardUI(data) {
     }
 
     if (powerTagEl) {
-        if (extPower) {
-            powerTagEl.className = "status-pill status-usb";
-            powerTagEl.textContent = "⚡ USB 5V Branché";
-        } else {
+        if (percent <= 15) {
             powerTagEl.className = "status-pill status-battery";
-            powerTagEl.textContent = "⚠️ Sur Batterie LiPo";
+            powerTagEl.textContent = "⚠️ Batterie Critique";
+        } else if (percent <= 30) {
+            powerTagEl.className = "status-pill status-battery";
+            powerTagEl.textContent = "🔋 Batterie Faible";
+        } else {
+            powerTagEl.className = "status-pill status-usb";
+            powerTagEl.textContent = "🔋 Batterie LiPo OK";
         }
     }
 
