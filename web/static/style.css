@@ -3,6 +3,7 @@
    ============================================================================== */
 
 :root {
+    color-scheme: dark;
     --bg-main: #0b0f19;
     --bg-card: #151d30;
     --bg-card-hover: #1c2640;
@@ -34,6 +35,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: var(--bg-main);
     color: var(--text-primary);
+    color-scheme: dark;
     min-height: 100vh;
     padding-bottom: 24px;
     display: flex;
@@ -593,13 +595,39 @@ body {
     width: 100%;
     height: 44px;
     padding: 0 12px;
-    background: rgba(255, 255, 255, 0.05);
+    background-color: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     color: var(--text-primary);
     font-size: 0.9rem;
     outline: none;
     transition: var(--transition-fast);
+    color-scheme: dark;
+}
+
+select.form-control {
+    cursor: pointer;
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+    color-scheme: dark;
+}
+
+select.form-control option {
+    background-color: #151d30;
+    color: #f8fafc;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+}
+
+select.form-control option:checked,
+select.form-control option:hover {
+    background-color: var(--accent-blue);
+    color: #ffffff;
+}
+
+select.form-control optgroup {
+    background-color: #0b0f19;
+    color: var(--text-secondary);
 }
 
 .form-control:focus {
