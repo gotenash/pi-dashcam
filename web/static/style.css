@@ -338,6 +338,94 @@ body {
     height: 100%;
     object-fit: contain;
     display: block;
+    transition: opacity 0.25s ease;
+}
+
+.preview-container.loading img {
+    opacity: 0.35;
+}
+
+.preview-loader {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 5;
+}
+
+.preview-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: rgba(15, 23, 42, 0.7);
+    cursor: pointer;
+    z-index: 10;
+    transition: background 0.2s ease;
+}
+
+.preview-overlay:hover {
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.preview-overlay.hidden {
+    display: none;
+}
+
+.overlay-play-btn {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.6);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.preview-overlay:hover .overlay-play-btn {
+    transform: scale(1.1);
+    box-shadow: 0 0 32px rgba(59, 130, 246, 0.85);
+}
+
+.overlay-play-btn .play-icon {
+    font-size: 2rem;
+    color: #fff;
+    margin-left: 4px;
+}
+
+.overlay-text {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #f8fafc;
+    background: rgba(0, 0, 0, 0.55);
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.preview-spinner {
+    font-size: 2rem;
+}
+
+.spin-animation {
+    display: inline-block;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 .preview-grid {
@@ -368,6 +456,16 @@ body {
 
 .preview-controls {
     margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.snapshot-time {
+    font-size: 0.78rem;
+    color: var(--text-muted);
 }
 
 .card-tip {

@@ -119,13 +119,29 @@
             <section id="tab-preview" class="tab-content">
                 <div class="card">
                     <div class="card-header space-between">
-                        <span class="card-title">Aperçu Cadrage (160° FOV)</span>
-                        <button class="btn btn-secondary btn-sm" onclick="refreshSnapshot()">
-                            🔄 Actualiser
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="card-title">Aide au Cadrage</span>
+                            <span id="live-indicator" class="badge badge-rec hidden" style="padding: 3px 8px; font-size: 0.72rem;">
+                                <span class="pulse-dot"></span> DIRECT (10 fps)
+                            </span>
+                            <span id="standby-indicator" class="badge badge-secondary" style="padding: 3px 8px; font-size: 0.72rem;">
+                                En veille (0% CPU)
+                            </span>
+                        </div>
+                        <button id="btn-toggle-cadrage" class="btn btn-primary btn-sm" onclick="toggleCadrageMode()">
+                            <span id="cadrage-btn-icon">▶</span>
+                            <span id="cadrage-btn-text">Démarrer le Direct</span>
                         </button>
                     </div>
-                    <div class="preview-container">
-                        <img id="snapshot-img" src="/api/snapshot" alt="Aperçu caméra">
+                    <div class="preview-container" id="preview-container">
+                        <img id="snapshot-img" src="/api/stream" alt="Aperçu caméra cadrage">
+                        <!-- Bouton overlay central cliquable pour démarrer le direct -->
+                        <div id="preview-overlay" class="preview-overlay" onclick="toggleCadrageMode()">
+                            <div class="overlay-play-btn">
+                                <span class="play-icon">▶</span>
+                            </div>
+                            <span class="overlay-text">Cliquer pour lancer la caméra en direct</span>
+                        </div>
                         <!-- Grille d'alignement pare-brise -->
                         <div id="preview-grid" class="preview-grid">
                             <div class="grid-line horizontal"></div>
@@ -138,9 +154,10 @@
                             <span class="toggle-slider"></span>
                             <span class="toggle-label">Afficher la ligne d'horizon</span>
                         </label>
+                        <span id="snapshot-time" class="snapshot-time">Mode direct prêt</span>
                     </div>
                     <p class="card-tip">
-                        💡 Utilisez cet aperçu pour orienter la rotule de la caméra face au capot et à la ligne d'horizon.
+                        💡 Cliquez sur <strong>Démarrer le Direct</strong> pour orienter votre caméra en temps réel. Lorsque vous avez terminé, cliquez sur <strong>Arrêter</strong> ou changez d'onglet pour reprendre l'enregistrement à 0% CPU.
                     </p>
                 </div>
             </section>

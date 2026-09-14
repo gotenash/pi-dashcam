@@ -10,8 +10,10 @@ import time
 import shutil
 import glob
 import subprocess
+import tempfile
+import threading
 from datetime import datetime
-from flask import Flask, render_template, jsonify, request, send_from_directory, Response
+from flask import Flask, render_template, jsonify, request, send_from_directory, Response, send_file, make_response
 
 # Ajout du chemin scripts pour importer les pilotes
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -287,37 +289,286 @@ def delete_videos_all():
     })
 
 
+def make_no_cache_response(resp):
+    """Ajoute les en-têtes HTTP pour interdire le cache navigateur."""
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
+cadrage_process = None
+cadrage_lock = threading.Lock()
+cadrage_timer = None
+
+
+def _auto_stop_cadrage():
+    """Arrêt automatique du mode cadrage après expiration du délai de sécurité (2 min)."""
+    with cadrage_lock:
+        _stop_cadrage_internal()
+
+
+def _stop_cadrage_internal():
+    """Arrête le sous-processus de cadrage et relance l'enregistrement dashcam."""
+    global cadrage_process, cadrage_timer
+    if cadrage_timer:
+        try:
+            cadrage_timer.cancel()
+        except Exception:
+            pass
+        cadrage_timer = None
+
+    if cadrage_process:
+        try:
+            cadrage_process.terminate()
+            cadrage_process.wait(timeout=2)
+        except Exception:
+            try:
+                cadrage_process.kill()
+            except Exception:
+                pass
+        cadrage_process = None
+
+    # Relancer dashcam.service
+    try:
+        subprocess.run(["systemctl", "start", "dashcam.service"], timeout=5)
+    except Exception:
+        pass
+
+
+@app.route("/api/cadrage/start", methods=["POST"])
+def api_cadrage_start():
+    """
+    Active le mode cadrage direct à la demande.
+    Suspend temporairement dashcam.service et démarre un flux matériel léger (640x360 @ 10fps).
+    """
+    global cadrage_process, cadrage_timer
+    with cadrage_lock:
+        # 1. Arrêter dashcam.service pour libérer le capteur
+        try:
+            subprocess.run(["systemctl", "stop", "dashcam.service"], timeout=5)
+        except Exception:
+            pass
+
+        # 2. Terminer un éventuel processus existant
+        if cadrage_process:
+            try:
+                cadrage_process.terminate()
+                cadrage_process.wait(timeout=1)
+            except Exception:
+                try:
+                    cadrage_process.kill()
+                except Exception:
+                    pass
+            cadrage_process = None
+
+        # 3. Détecter l'outil de capture caméra
+        cam_bin = "rpicam-vid" if shutil.which("rpicam-vid") else "libcamera-vid"
+        if not shutil.which(cam_bin):
+            return jsonify({"active": True, "simulation": True})
+
+        rot = int(CONFIG.get("VIDEO_ROTATION", 0))
+        rot_args = []
+        if rot == 180:
+            rot_args = ["--hflip", "--vflip"]
+        elif rot in (90, 270):
+            rot_args = ["--rotation", str(rot)]
+
+        cmd = [
+            cam_bin,
+            "-t", "0",
+            "--nopreview",
+            "--width", "640",
+            "--height", "360",
+            "--framerate", "10",
+            "--codec", "mjpeg",
+            "-o", "-"
+        ] + rot_args
+
+        try:
+            cadrage_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0
+            )
+
+            # Minuteur de sécurité : arrêt automatique après 120 secondes pour protéger le CPU/batterie
+            if cadrage_timer:
+                cadrage_timer.cancel()
+            cadrage_timer = threading.Timer(120.0, _auto_stop_cadrage)
+            cadrage_timer.daemon = True
+            cadrage_timer.start()
+
+            return jsonify({"active": True, "timeout_sec": 120})
+        except Exception as e:
+            _stop_cadrage_internal()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cadrage/stop", methods=["POST"])
+def api_cadrage_stop():
+    """Arrête le mode cadrage direct et réactive l'enregistrement normal."""
+    with cadrage_lock:
+        _stop_cadrage_internal()
+    return jsonify({"active": False, "message": "Enregistrement dashcam repris"})
+
+
+@app.route("/api/cadrage/status", methods=["GET"])
+def api_cadrage_status():
+    """Indique si le mode cadrage est actuellement actif."""
+    is_active = cadrage_process is not None and cadrage_process.poll() is None
+    return jsonify({"active": is_active})
+
+
+@app.route("/api/stream")
+def api_stream():
+    """
+    Flux vidéo MJPEG en direct pour le cadrage en temps réel.
+    Lit les trames JPEG envoyées par rpicam-vid sur stdout.
+    """
+    def generate_frames():
+        global cadrage_process
+        if cadrage_process and cadrage_process.stdout:
+            buf = b""
+            while cadrage_process and cadrage_process.poll() is None:
+                try:
+                    chunk = cadrage_process.stdout.read(4096)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    start = buf.find(b"\xff\xd8")
+                    end = buf.find(b"\xff\xd9", start + 2) if start != -1 else -1
+                    if start != -1 and end != -1:
+                        jpg = buf[start : end + 2]
+                        buf = buf[end + 2 :]
+                        yield (b"--frame\r\n"
+                               b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n")
+                except Exception:
+                    break
+
+        # SVG d'attente quand le direct n'est pas actif
+        svg = """<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+            <rect width="100%" height="100%" fill="#1e293b"/>
+            <circle cx="320" cy="140" r="36" fill="#334155"/>
+            <polygon points="312,125 312,155 336,140" fill="#38bdf8"/>
+            <text x="320" y="210" fill="#f8fafc" font-family="sans-serif" font-size="16" font-weight="600" text-anchor="middle">
+                Caméra en direct inactive
+            </text>
+            <text x="320" y="240" fill="#94a3b8" font-family="sans-serif" font-size="13" text-anchor="middle">
+                Cliquez sur « Démarrer le Direct » pour ajuster votre cadrage
+            </text>
+            <text x="320" y="275" fill="#64748b" font-family="sans-serif" font-size="11" text-anchor="middle">
+                Le direct est activé à la demande pour préserver le CPU (&lt; 1%) et la batterie
+            </text>
+        </svg>"""
+        yield (b"--frame\r\n"
+               b"Content-Type: image/svg+xml\r\n\r\n" + svg.encode("utf-8") + b"\r\n")
+
+    return Response(
+        generate_frames(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
 @app.route("/api/snapshot")
 def api_snapshot():
     """
     Fournit un instantané récent pour ajuster le cadrage sur le pare-brise.
-    Si la caméra est en cours d'enregistrement, extrait l'image de la dernière vidéo via ffmpeg.
-    Sinon effectue une capture directe.
+    0. Utilise en priorité absolue l'image directe rafraîchie en mémoire vive (/dev/shm).
+    1. Si des vidéos existent, extrait une image via ffmpeg.
+    2. Si aucune vidéo ou échec ffmpeg, tente une capture directe rpicam-still / libcamera-still.
+    3. Sinon renvoie une image SVG explicative avec horodatage dynamique.
     """
-    storage_dir = CONFIG.get("STORAGE_DIR", "/var/media/dashcam")
-    snapshot_path = "/tmp/dashcam_preview.jpg"
+    # 0. Priorité absolue : image directe en mémoire vive (RAM tmpfs)
+    live_paths = [
+        "/dev/shm/dashcam_live.jpg",
+        os.path.join(tempfile.gettempdir(), "dashcam_live.jpg")
+    ]
+    for p in live_paths:
+        if os.path.exists(p) and os.path.getsize(p) > 100:
+            resp = make_response(send_file(p, mimetype="image/jpeg"))
+            return make_no_cache_response(resp)
 
-    # Chercher la vidéo la plus récente
-    video_files = glob.glob(os.path.join(storage_dir, "*.mp4"))
-    if video_files:
-        video_files.sort(key=os.path.getmtime, reverse=True)
-        latest_video = video_files[0]
-        # Extraction rapide de la dernière seconde avec ffmpeg
-        cmd = [
-            "ffmpeg", "-y", "-sseof", "-2",
-            "-i", latest_video,
-            "-vframes", "1",
-            "-q:v", "3",
-            snapshot_path
-        ]
+    storage_dir = CONFIG.get("STORAGE_DIR", "/var/media/dashcam")
+    temp_dir = tempfile.gettempdir()
+    snapshot_path = os.path.join(temp_dir, "dashcam_preview.jpg")
+
+    # Supprimer un éventuel ancien fichier temporaire pour éviter de servir du contenu périmé
+    if os.path.exists(snapshot_path):
         try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
-            if os.path.exists(snapshot_path):
-                return send_from_directory("/tmp", "dashcam_preview.jpg", mimetype="image/jpeg")
+            os.remove(snapshot_path)
         except Exception:
             pass
 
-    # Si aucune vidéo ou échec ffmpeg, tentative directe si dashcam inactive
+    # 1. Extraction depuis les vidéos existantes
+    video_files = glob.glob(os.path.join(storage_dir, "*.mp4"))
+    if video_files:
+        video_files.sort(key=os.path.getmtime, reverse=True)
+        # On teste jusqu'aux 3 vidéos les plus récentes
+        for vid in video_files[:3]:
+            try:
+                if os.path.getsize(vid) < 1024:
+                    continue
+            except Exception:
+                continue
+
+            # Tentative A : fin de vidéo (-sseof -2)
+            cmd_eof = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-sseof", "-2",
+                "-i", vid,
+                "-vframes", "1",
+                "-q:v", "3",
+                snapshot_path
+            ]
+            try:
+                subprocess.run(cmd_eof, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
+                if os.path.exists(snapshot_path) and os.path.getsize(snapshot_path) > 0:
+                    resp = make_response(send_file(snapshot_path, mimetype="image/jpeg"))
+                    return make_no_cache_response(resp)
+            except Exception:
+                pass
+
+            # Tentative B : première seconde (utile si le segment fMP4 est en cours d'enregistrement ou court)
+            cmd_start = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-ss", "00:00:01",
+                "-i", vid,
+                "-vframes", "1",
+                "-q:v", "3",
+                snapshot_path
+            ]
+            try:
+                subprocess.run(cmd_start, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
+                if os.path.exists(snapshot_path) and os.path.getsize(snapshot_path) > 0:
+                    resp = make_response(send_file(snapshot_path, mimetype="image/jpeg"))
+                    return make_no_cache_response(resp)
+            except Exception:
+                pass
+
+            # Tentative C : première image disponible
+            cmd_first = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", vid,
+                "-vframes", "1",
+                "-q:v", "3",
+                snapshot_path
+            ]
+            try:
+                subprocess.run(cmd_first, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
+                if os.path.exists(snapshot_path) and os.path.getsize(snapshot_path) > 0:
+                    resp = make_response(send_file(snapshot_path, mimetype="image/jpeg"))
+                    return make_no_cache_response(resp)
+            except Exception:
+                pass
+
+    # 2. Capture directe si la dashcam n'est pas en cours d'enregistrement
     if not get_service_status("dashcam.service"):
         cam_bin = "rpicam-still" if shutil.which("rpicam-still") else "libcamera-still"
         if shutil.which(cam_bin):
@@ -329,24 +580,35 @@ def api_snapshot():
                     rot_args = ["--rotation", str(rot)]
                 else:
                     rot_args = []
+                # Timeout augmenté à 8s pour laisser à libcamera le temps d'initialiser le capteur
                 subprocess.run(
                     [cam_bin, "-t", "500", "-o", snapshot_path, "-n", "--width", "1280", "--height", "720"] + rot_args,
-                    timeout=3
+                    timeout=8
                 )
-                if os.path.exists(snapshot_path):
-                    return send_from_directory("/tmp", "dashcam_preview.jpg", mimetype="image/jpeg")
+                if os.path.exists(snapshot_path) and os.path.getsize(snapshot_path) > 0:
+                    resp = make_response(send_file(snapshot_path, mimetype="image/jpeg"))
+                    return make_no_cache_response(resp)
             except Exception:
                 pass
 
-    # Image SVG de secours si aucune capture n'est encore disponible
-    svg_fallback = """<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+    # 3. Image SVG dynamique si aucune image n'a pu être extraite
+    now_str = datetime.now().strftime("%H:%M:%S")
+    svg_fallback = f"""<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
         <rect width="100%" height="100%" fill="#1e293b"/>
-        <circle cx="320" cy="180" r="40" fill="#334155"/>
-        <text x="320" y="185" fill="#94a3b8" font-family="sans-serif" font-size="16" text-anchor="middle">
-            Aperçu disponible dès le premier segment enregistré
+        <circle cx="320" cy="150" r="36" fill="#334155"/>
+        <path d="M305 150h30M320 135v30" stroke="#64748b" stroke-width="3" stroke-linecap="round"/>
+        <text x="320" y="215" fill="#94a3b8" font-family="sans-serif" font-size="15" font-weight="600" text-anchor="middle">
+            Aperçu caméra en attente
+        </text>
+        <text x="320" y="240" fill="#64748b" font-family="sans-serif" font-size="12" text-anchor="middle">
+            L'image s'affichera dès le premier segment enregistré
+        </text>
+        <text x="320" y="275" fill="#38bdf8" font-family="sans-serif" font-size="11" text-anchor="middle">
+            Dernière tentative : {now_str}
         </text>
     </svg>"""
-    return Response(svg_fallback, mimetype="image/svg+xml")
+    resp = make_response(Response(svg_fallback, mimetype="image/svg+xml"))
+    return make_no_cache_response(resp)
 
 
 @app.route("/api/config", methods=["GET", "POST"])

@@ -28,11 +28,14 @@ function initTabs() {
             const targetEl = document.getElementById(targetTab);
             if (targetEl) targetEl.classList.add("active");
 
-            // Si on ouvre l'onglet vidéo, rafraîchir
+            // Si on ouvre un autre onglet, couper le cadrage direct pour économiser le CPU
             if (targetTab === "tab-videos") {
+                stopCadrageMode();
                 loadVideos();
             } else if (targetTab === "tab-preview") {
-                refreshSnapshot();
+                checkCadrageStatus();
+            } else {
+                stopCadrageMode();
             }
         });
     });
@@ -419,13 +422,124 @@ async function deleteAllVideos() {
     }
 }
 
-// 5. Cadrage Caméra
-function refreshSnapshot() {
-    const img = document.getElementById("snapshot-img");
-    if (img) {
-        img.src = `/api/snapshot?t=${Date.now()}`;
+// 5. Cadrage Caméra à la demande (0% CPU en veille)
+let isCadrageActive = false;
+let cadrageAutoTimeout = null;
+
+async function checkCadrageStatus() {
+    try {
+        const res = await fetch("/api/cadrage/status");
+        const data = await res.json();
+        updateCadrageUI(data.active);
+    } catch (err) {
+        updateCadrageUI(false);
     }
 }
+
+async function toggleCadrageMode() {
+    if (isCadrageActive) {
+        await stopCadrageMode();
+    } else {
+        await startCadrageMode();
+    }
+}
+
+async function startCadrageMode() {
+    const btn = document.getElementById("btn-toggle-cadrage");
+    const btnText = document.getElementById("cadrage-btn-text");
+    if (btn) btn.disabled = true;
+    if (btnText) btnText.textContent = "Démarrage...";
+
+    try {
+        const res = await fetch("/api/cadrage/start", { method: "POST" });
+        const data = await res.json();
+        if (data.active) {
+            updateCadrageUI(true);
+            showToast("Mode direct actif (10 fps) - Dashcam en pause");
+
+            // Sécurité côté client : auto-arrêt après 2 minutes pour protéger le CPU/batterie
+            clearTimeout(cadrageAutoTimeout);
+            cadrageAutoTimeout = setTimeout(() => {
+                if (isCadrageActive) {
+                    stopCadrageMode();
+                    showToast("Arrêt automatique du direct (2 min écoulées)");
+                }
+            }, 120000);
+        } else {
+            showToast(data.error || "Impossible de démarrer le direct", true);
+            updateCadrageUI(false);
+        }
+    } catch (err) {
+        showToast("Erreur de connexion", true);
+        updateCadrageUI(false);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function stopCadrageMode() {
+    clearTimeout(cadrageAutoTimeout);
+    if (!isCadrageActive) return;
+
+    const btn = document.getElementById("btn-toggle-cadrage");
+    const btnText = document.getElementById("cadrage-btn-text");
+    if (btn) btn.disabled = true;
+    if (btnText) btnText.textContent = "Arrêt...";
+
+    try {
+        await fetch("/api/cadrage/stop", { method: "POST" });
+        updateCadrageUI(false);
+        showToast("Enregistrement dashcam repris (0% CPU)");
+    } catch (err) {
+        console.warn("Erreur lors de l'arrêt du cadrage:", err);
+        updateCadrageUI(false);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function updateCadrageUI(active) {
+    isCadrageActive = active;
+    const img = document.getElementById("snapshot-img");
+    const btn = document.getElementById("btn-toggle-cadrage");
+    const icon = document.getElementById("cadrage-btn-icon");
+    const text = document.getElementById("cadrage-btn-text");
+    const liveInd = document.getElementById("live-indicator");
+    const standbyInd = document.getElementById("standby-indicator");
+    const timeEl = document.getElementById("snapshot-time");
+
+    const overlay = document.getElementById("preview-overlay");
+
+    if (active) {
+        if (img) img.src = `/api/stream?t=${Date.now()}`;
+        if (overlay) overlay.classList.add("hidden");
+        if (btn) {
+            btn.className = "btn btn-danger btn-sm";
+        }
+        if (icon) icon.textContent = "⏹";
+        if (text) text.textContent = "Arrêter le Direct";
+        if (liveInd) liveInd.classList.remove("hidden");
+        if (standbyInd) standbyInd.classList.add("hidden");
+        if (timeEl) timeEl.textContent = "Direct actif (Arrêt auto dans 2 min)";
+    } else {
+        if (img) img.src = `/api/stream?t=${Date.now()}`;
+        if (overlay) overlay.classList.remove("hidden");
+        if (btn) {
+            btn.className = "btn btn-primary btn-sm";
+        }
+        if (icon) icon.textContent = "▶";
+        if (text) text.textContent = "Démarrer le Direct";
+        if (liveInd) liveInd.classList.add("hidden");
+        if (standbyInd) standbyInd.classList.remove("hidden");
+        if (timeEl) timeEl.textContent = "Mode veille (Dashcam enregistre à 0% CPU)";
+    }
+}
+
+window.addEventListener("beforeunload", () => {
+    if (isCadrageActive) {
+        navigator.sendBeacon("/api/cadrage/stop");
+    }
+});
 
 function toggleAlignmentGrid() {
     const cb = document.getElementById("toggle-grid");
