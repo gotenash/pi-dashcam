@@ -181,34 +181,16 @@ class UPSSensor:
     def is_charging(self, voltage: Optional[float] = None, percent: Optional[float] = None) -> bool:
         """
         Détermine si la batterie est actuellement alimentée / en charge (USB 5V branché).
-        Combine :
-        1. Test physique direct de la broche GPIO 4 de l'UPS-Lite (si connectée)
-        2. Profil de tension I2C sous charge du Pi : en charge le régulateur TP4056 maintient
-           la cellule >= 3.98V (ex: 4.05V à 85%), alors qu'en décharge autonome elle chute sous 3.95V.
+        Sur l'UPS-Lite (4 pogo-pins : 5V, GND, SDA, SCL), la surveillance est 100% logicielle I2C :
+        - En charge, le régulateur TP4056 maintient la cellule LiPo >= 3.98V (ex: 4.05V à 85.6%).
+        - En décharge autonome sous la consommation du Pi Zero 2 W (~350mA), la tension chute sous 3.95V.
         """
-        # 1. Vérification matérielle directe sur GPIO 4 (pinctrl natif sous Bookworm)
-        try:
-            res = subprocess.run(
-                ["pinctrl", "get", "4"],
-                capture_output=True,
-                text=True,
-                timeout=0.3
-            )
-            if res.returncode == 0 and "hi" in res.stdout:
-                return True
-        except Exception:
-            pass
-
-        # 2. Analyse télémétrique I2C
         if voltage is None or percent is None:
             try:
                 voltage, percent = self.read_status()
             except Exception:
                 return True
 
-        # En charge sur UPS-Lite, la tension aux bornes de la LiPo est maintenue au-dessus de 3.98V
-        # (ex: 4.05V à 85.6% de charge comme mesuré sur le Pi Zero 2 W).
-        # En décharge autonome sous la charge du Pi, elle chute rapidement sous 3.95V.
         if voltage >= 3.98:
             return True
         if percent >= 92.0 and voltage >= 3.90:
