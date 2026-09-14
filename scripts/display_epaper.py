@@ -21,7 +21,7 @@ sys.path.insert(0, SCRIPT_DIR)
 
 from epd2in13_v4 import EPD2in13_V4
 try:
-    from power_monitor import MAX17040, PowerInputDetector, load_config
+    from power_monitor import MAX17040, load_config
 except ImportError:
     def load_config():
         return {
@@ -33,10 +33,8 @@ except ImportError:
             "HOTSPOT_IP": "10.42.0.1",
             "UPS_I2C_BUS": 1,
             "UPS_I2C_ADDR": 0x36,
-            "POWER_DETECT_PIN": 4,
         }
     MAX17040 = None
-    PowerInputDetector = None
 
 WIDTH = 250
 HEIGHT = 122
@@ -65,7 +63,7 @@ class EPaperDashboard:
         self.running = True
         self.full_refresh_counter = 0
 
-        # Capteur UPS I2C et détection d'alimentation
+        # Capteur UPS I2C
         self.ups = None
         if MAX17040:
             try:
@@ -75,16 +73,6 @@ class EPaperDashboard:
                 )
             except Exception:
                 self.ups = None
-
-        self.power_detector = None
-        if PowerInputDetector:
-            try:
-                self.power_detector = PowerInputDetector(
-                    pin=self.config.get("POWER_DETECT_PIN", 4),
-                    active_low=bool(self.config.get("POWER_DETECT_ACTIVE_LOW", 0))
-                )
-            except Exception:
-                self.power_detector = None
 
         # Polices
         self.font_large = get_font(16, bold=True)
@@ -144,14 +132,7 @@ class EPaperDashboard:
                 v, pct = self.ups.read_status()
             except Exception:
                 pass
-        ext = None
-        if self.power_detector:
-            try:
-                ext = self.power_detector.is_external_power_connected()
-            except Exception:
-                pass
-        if ext is None:
-            ext = bool(v >= 4.02)
+        ext = bool(v >= 4.08 and pct >= 92.0)
         return round(v, 2), round(pct, 0), ext
 
     def render_dashboard(self) -> Image.Image:

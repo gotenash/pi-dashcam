@@ -19,15 +19,13 @@ sys.path.insert(0, os.path.join(BASE_DIR, "scripts"))
 sys.path.insert(0, "/usr/local/bin")
 
 try:
-    from power_monitor import MAX17040, PowerInputDetector, load_config
+    from power_monitor import MAX17040, load_config
 except ImportError:
-    # Mode autonome si exécuté hors structure
     def load_config():
         return {
             "STORAGE_DIR": "/var/media/dashcam",
             "WEB_PORT": 5000,
             "WEB_HOST": "0.0.0.0",
-            "POWER_DETECT_PIN": 4,
             "UPS_I2C_BUS": 1,
             "UPS_I2C_ADDR": 0x36,
             "SEGMENT_DURATION_SEC": 180,
@@ -38,14 +36,12 @@ except ImportError:
             "MAX_DISK_USAGE_PERCENT": 85,
         }
     MAX17040 = None
-    PowerInputDetector = None
 
 app = Flask(__name__)
 CONFIG = load_config()
 
-# Instances matérielles (avec résilience)
+# Instance télémétrie batterie UPS-Lite (I2C 0x36)
 ups_sensor = None
-power_sensor = None
 if MAX17040:
     try:
         ups_sensor = MAX17040(
@@ -54,15 +50,6 @@ if MAX17040:
         )
     except Exception:
         ups_sensor = None
-
-if PowerInputDetector:
-    try:
-        power_sensor = PowerInputDetector(
-            pin=CONFIG.get("POWER_DETECT_PIN", 4),
-            active_low=bool(CONFIG.get("POWER_DETECT_ACTIVE_LOW", 0))
-        )
-    except Exception:
-        power_sensor = None
 
 
 def get_cpu_temperature() -> float:
@@ -134,17 +121,10 @@ def api_status():
     else:
         battery_v, battery_pct = 4.10, 95.0
 
-    # 2. Détection alimentation externe (GPIO 4 sur UPS-Lite V1.2 après soudure des pads)
-    ext_power = None
-    if power_sensor:
-        try:
-            ext_power = power_sensor.is_external_power_connected()
-        except Exception:
-            ext_power = None
-
-    if ext_power is None:
-        # Fallback de secours si GPIO non lisible
-        ext_power = bool(battery_v >= 4.02)
+    # 2. Détection alimentation / état de charge (Télémétrie I2C MAX17040G)
+    # Quand l'USB 5V est branché, le chargeur maintient la batterie à tension élevée (>= 4.08V)
+    # et charge max (>= 92%). En décharge sous la charge du Pi, la tension et le niveau descendent.
+    ext_power = bool(battery_v >= 4.08 and battery_pct >= 92.0)
 
     # 3. Métriques système
     disk = get_disk_statistics(storage_dir)

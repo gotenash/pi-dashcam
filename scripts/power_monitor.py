@@ -22,10 +22,9 @@ DEFAULT_CONFIG_PATHS = [
 DEFAULTS = {
     "UPS_I2C_BUS": 1,
     "UPS_I2C_ADDR": 0x36,
-    "POWER_DETECT_PIN": 4,
-    "POWER_DETECT_ACTIVE_LOW": 0,
     "ENABLE_AUTO_SHUTDOWN": 0,
-    "SHUTDOWN_DELAY_SEC": 30,
+    "PARKING_SHUTDOWN_BATTERY_PERCENT": 85.0,
+    "PARKING_MAX_DURATION_SEC": 600,
     "CRITICAL_BATTERY_PERCENT": 10.0,
     "CRITICAL_BATTERY_VOLTAGE": 3.40,
     "LOG_LEVEL": "INFO",
@@ -51,11 +50,15 @@ def load_config() -> Dict[str, Any]:
                             key = key.strip()
                             val = val.strip().strip('"').strip("'")
                             int_keys = (
-                                "UPS_I2C_BUS", "POWER_DETECT_PIN", "POWER_DETECT_ACTIVE_LOW", "SHUTDOWN_DELAY_SEC",
+                                "UPS_I2C_BUS", "PARKING_MAX_DURATION_SEC", "SHUTDOWN_DELAY_SEC",
                                 "SEGMENT_DURATION_SEC", "VIDEO_WIDTH", "VIDEO_HEIGHT", "VIDEO_FPS",
                                 "VIDEO_BITRATE", "MAX_DISK_USAGE_PERCENT", "MIN_FREE_SPACE_MB", "WEB_PORT"
                             )
-                            float_keys = ("CRITICAL_BATTERY_PERCENT", "CRITICAL_BATTERY_VOLTAGE")
+                            float_keys = (
+                                "PARKING_SHUTDOWN_BATTERY_PERCENT",
+                                "CRITICAL_BATTERY_PERCENT",
+                                "CRITICAL_BATTERY_VOLTAGE"
+                            )
 
                             if key in int_keys:
                                 try:
@@ -138,111 +141,6 @@ class MAX17040:
         return self.read_voltage(), self.read_percentage()
 
 
-class PowerInputDetector:
-    """
-    Gestionnaire pour la détection de présence d'alimentation externe (GPIO 4 sur UPS-Lite V1.2).
-    Sur UPS-Lite V1.2 (avec les 2 pads pontés à l'étain au dos de la carte) :
-    HIGH (1) = Alimentation externe USB 5V connectée.
-    LOW (0)  = Déconnecté, fonctionnement sur batterie LiPo.
-    """
-    def __init__(self, pin: int = 4, active_low: bool = False):
-        self.pin = pin
-        self.active_low = active_low
-        self._method = None
-        self._h = None
-        self._line = None
-        self._setup()
-
-    def _setup(self):
-        # 1. Tenter lgpio (standard officiel Bookworm)
-        try:
-            import lgpio
-            self._h = lgpio.gpiochip_open(0)
-            lgpio.gpio_claim_input(self._h, self.pin)
-            self._method = "lgpio"
-            return
-        except Exception:
-            pass
-
-        # 2. Tenter gpiod
-        try:
-            import gpiod
-            chip = gpiod.Chip('gpiochip0')
-            self._line = chip.get_line(self.pin)
-            self._line.request(consumer="power_detect", type=gpiod.LINE_REQ_DIR_IN)
-            self._method = "gpiod"
-            return
-        except Exception:
-            pass
-
-        # 3. Fallback pinctrl natif Bookworm
-        import shutil
-        if shutil.which("pinctrl"):
-            self._method = "pinctrl"
-            return
-
-        # 4. Fallback RPi.GPIO
-        try:
-            import RPi.GPIO as GPIO
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setup(self.pin, GPIO.IN)
-            self._method = "rpi_gpio"
-            return
-        except Exception:
-            pass
-
-    def read_pin(self) -> Optional[int]:
-        """Lit l'état logique de la broche GPIO (0 ou 1)."""
-        if self._method == "lgpio" and self._h is not None:
-            try:
-                import lgpio
-                return int(lgpio.gpio_read(self._h, self.pin))
-            except Exception:
-                pass
-
-        if self._method == "gpiod" and self._line is not None:
-            try:
-                return int(self._line.get_value())
-            except Exception:
-                pass
-
-        if self._method == "rpi_gpio":
-            try:
-                import RPi.GPIO as GPIO
-                return int(GPIO.input(self.pin))
-            except Exception:
-                pass
-
-        # Lecture universelle via pinctrl (binaire natif Bookworm)
-        try:
-            res = subprocess.run(
-                ["pinctrl", "get", str(self.pin)],
-                capture_output=True,
-                text=True,
-                timeout=1
-            )
-            out = res.stdout.lower()
-            if "| hi" in out or " hi " in out:
-                return 1
-            elif "| lo" in out or " lo " in out:
-                return 0
-        except Exception:
-            pass
-
-        return None
-
-    def is_external_power_connected(self) -> Optional[bool]:
-        """
-        Retourne True si alimenté par USB 5V, False sur batterie, None si indéterminé.
-        """
-        val = self.read_pin()
-        if val is None:
-            return None
-        if self.active_low:
-            return bool(val == 0)
-        return bool(val == 1)
-
-
 class PowerMonitorDaemon:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -251,11 +149,9 @@ class PowerMonitorDaemon:
             bus_num=config["UPS_I2C_BUS"],
             address=config["UPS_I2C_ADDR"]
         )
-        self.power_detector = PowerInputDetector(
-            pin=config["POWER_DETECT_PIN"],
-            active_low=bool(config.get("POWER_DETECT_ACTIVE_LOW", 1))
-        )
         self.shutdown_in_progress = False
+        self.discharge_start_time: Optional[float] = None
+        self.last_percent: Optional[float] = None
 
     def handle_signal(self, signum, frame):
         logging.info("Signal reçu (%s), arrêt du démon power_monitor...", signum)
@@ -298,18 +194,17 @@ class PowerMonitorDaemon:
         signal.signal(signal.SIGINT, self.handle_signal)
         signal.signal(signal.SIGTERM, self.handle_signal)
 
-        logging.info("Démarrage du démon power_monitor (UPS-Lite V1.2)...")
+        logging.info("Démarrage du démon power_monitor (I2C MAX17040G)...")
         logging.info(
-            "Config: I2C Bus %d, Addr 0x%02X, GPIO Détection %d, Délai extinction: %ds, Seuil critique: %.1f%% / %.2fV",
+            "Config: I2C Bus %d, Addr 0x%02X, Seuil extinction parking: %.1f%%, Durée max parking: %ds, Seuil critique: %.1f%% / %.2fV",
             self.config["UPS_I2C_BUS"],
             self.config["UPS_I2C_ADDR"],
-            self.config["POWER_DETECT_PIN"],
-            self.config["SHUTDOWN_DELAY_SEC"],
+            self.config.get("PARKING_SHUTDOWN_BATTERY_PERCENT", 85.0),
+            self.config.get("PARKING_MAX_DURATION_SEC", 600),
             self.config["CRITICAL_BATTERY_PERCENT"],
             self.config["CRITICAL_BATTERY_VOLTAGE"]
         )
 
-        countdown_start: Optional[float] = None
         last_log_time = 0.0
 
         while self.running and not self.shutdown_in_progress:
@@ -321,25 +216,24 @@ class PowerMonitorDaemon:
                     logging.warning("Erreur lecture I2C MAX17040: %s", e)
                     voltage, percent = 3.8, 50.0
 
-                # Détection alimentation externe (avec fallback intelligent I2C pour UPS-Lite V1.2)
-                ext_power = self.power_detector.is_external_power_connected()
-                if ext_power is None:
-                    ext_power = bool(voltage >= 4.02 or percent >= 90.0)
                 now = time.time()
+                parking_threshold = float(self.config.get("PARKING_SHUTDOWN_BATTERY_PERCENT", 85.0))
+                max_parking_duration = int(self.config.get("PARKING_MAX_DURATION_SEC", 600))
+                auto_shutdown_enabled = bool(self.config.get("ENABLE_AUTO_SHUTDOWN", 0))
+
+                # Détection alimentation vs décharge (basée sur tension et niveau)
+                is_charging_or_full = bool(voltage >= 4.08 and percent >= 92.0)
 
                 # Log d'état périodique (toutes les 60 secondes si stable)
                 if now - last_log_time >= 60.0:
-                    status_str = "USB ALIMENTÉ" if ext_power else "SUR BATTERIE"
+                    status_str = "USB ALIMENTÉ (Plein/Charge)" if is_charging_or_full else "SUR BATTERIE (Décharge)"
                     logging.info(
                         "Statut: %s | Batterie: %.1f%% | Tension: %.2fV",
                         status_str, percent, voltage
                     )
                     last_log_time = now
 
-                # Vérification si l'extinction automatique est activée
-                auto_shutdown_enabled = bool(self.config.get("ENABLE_AUTO_SHUTDOWN", 0))
-
-                # 1. Vérification seuil d'urgence absolu (protection LiPo)
+                # 1. Vérification seuil d'urgence absolu (protection physique de la cellule LiPo)
                 if (percent <= self.config["CRITICAL_BATTERY_PERCENT"] or 
                     voltage <= self.config["CRITICAL_BATTERY_VOLTAGE"]):
                     if auto_shutdown_enabled:
@@ -350,72 +244,63 @@ class PowerMonitorDaemon:
                     else:
                         logging.warning("Batterie critique mais extinction automatique désactivée (ENABLE_AUTO_SHUTDOWN=0).")
 
-                # 2. Gestion de la perte d'alimentation externe
-                if ext_power is False:
-                    if countdown_start is None:
-                        countdown_start = now
-                        if auto_shutdown_enabled:
-                            logging.warning(
-                                "Alimentation externe coupée ! Compte à rebours avant extinction : %d secondes.",
-                                self.config["SHUTDOWN_DELAY_SEC"]
-                            )
-                        else:
-                            logging.info("Alimentation externe coupée (extinction désactivée, fonctionnement continu).")
+                # 2. Gestion du mode Parking / Décharge en voiture
+                if not is_charging_or_full:
+                    if self.discharge_start_time is None:
+                        self.discharge_start_time = now
+                        logging.info("Passage sur batterie LiPo détecté.")
 
-                    elapsed = now - countdown_start
-                    remaining = self.config["SHUTDOWN_DELAY_SEC"] - elapsed
+                    elapsed_discharge = now - self.discharge_start_time
 
-                    if auto_shutdown_enabled and remaining <= 0:
-                        self.initiate_safe_shutdown(
-                            f"Fin du compte à rebours d'extinction ({self.config['SHUTDOWN_DELAY_SEC']}s après coupure contact)"
-                        )
-                        break
-                    elif auto_shutdown_enabled:
-                        # Log du décompte toutes les 5 secondes
-                        if int(elapsed) % 5 == 0:
-                            logging.warning(
-                                "Extinction programmée dans %d secondes (Batterie: %.1f%%, %.2fV)...",
-                                int(remaining), percent, voltage
+                    if auto_shutdown_enabled:
+                        # Déclenchement si la batterie descend sous le seuil de parking (ex: 85%)
+                        if percent <= parking_threshold:
+                            self.initiate_safe_shutdown(
+                                f"Seuil de batterie parking atteint ({percent:.1f}% <= {parking_threshold:.1f}%)"
                             )
+                            break
+
+                        # Déclenchement si la durée max sur batterie est dépassée (ex: 10 minutes)
+                        if max_parking_duration > 0 and elapsed_discharge >= max_parking_duration:
+                            self.initiate_safe_shutdown(
+                                f"Durée maximale de surveillance parking atteinte ({int(elapsed_discharge)}s / {max_parking_duration}s)"
+                            )
+                            break
                 else:
-                    # Alimentation externe présente ou rétablie
-                    if countdown_start is not None:
-                        logging.info("Alimentation externe rétablie. Annulation du compte à rebours d'extinction.")
-                        countdown_start = None
+                    # Batterie pleine / en charge
+                    if self.discharge_start_time is not None:
+                        logging.info("Alimentation USB rétablie / Batterie rechargée.")
+                        self.discharge_start_time = None
+
+                self.last_percent = percent
 
             except Exception as e:
                 logging.error("Erreur inattendue dans la boucle de surveillance: %s", e)
 
-            time.sleep(1.0)
+            time.sleep(2.0)
 
         self.ups.close()
         logging.info("Démon power_monitor terminé.")
 
 
 def print_status_and_exit(config: Dict[str, Any]):
-    """Affiche l'état courant de l'alimentation et de la batterie puis quitte."""
-    print("=== Diagnostic Alimentation & Batterie (UPS-Lite V1.2) ===")
+    """Affiche l'état courant de la batterie via I2C puis quitte."""
+    print("=== Diagnostic Alimentation & Batterie (MAX17040G I2C) ===")
     ups = MAX17040(bus_num=config["UPS_I2C_BUS"], address=config["UPS_I2C_ADDR"])
-    detector = PowerInputDetector(pin=config["POWER_DETECT_PIN"])
 
     try:
         voltage, percent = ups.read_status()
         print(f"Jauge MAX17040 (0x{config['UPS_I2C_ADDR']:02X}) :")
         print(f"  - Tension batterie : {voltage:.3f} V")
         print(f"  - Charge restante  : {percent:.1f} %")
+        if voltage >= 4.08 and percent >= 92.0:
+            print("  - État estimé     : USB Alimenté (Batterie pleine ou en floating)")
+        else:
+            print("  - État estimé     : Sur batterie (Fonctionnement autonome)")
     except Exception as e:
         print(f"  - Erreur de communication I2C: {e}")
     finally:
         ups.close()
-
-    ext_power = detector.is_external_power_connected()
-    if ext_power is True:
-        power_str = "CONNECTÉE (Alimentation USB active)"
-    elif ext_power is False:
-        power_str = "DÉCONNECTÉE (Fonctionnement sur batterie)"
-    else:
-        power_str = "INDÉTERMINÉ (Vérifier GPIO 4 ou permissions)"
-    print(f"Alimentation externe (GPIO {config['POWER_DETECT_PIN']}) : {power_str}")
 
 
 def main():

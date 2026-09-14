@@ -94,7 +94,6 @@ Il n'y a **strictement aucun conflit de broches** entre les deux cartes :
 | **UPS-Lite V1.2** | Pin 6 | `GND` | Masse |
 | **UPS-Lite V1.2** | Pin 3 | `GPIO 2 (SDA)` | Ligne de données I2C (MAX17040G, `0x36`) |
 | **UPS-Lite V1.2** | Pin 5 | `GPIO 3 (SCL)` | Ligne d'horloge I2C |
-| **UPS-Lite V1.2** | Pin 7 | `GPIO 4` | Détection USB 5V (1 = Branché, 0 = Débranché) via pont de soudure |
 | **e-Paper HAT V4** | Pin 1 | `3.3V` | Alimentation logique de l'écran |
 | **e-Paper HAT V4** | Pin 9 | `GND` | Masse écran |
 | **e-Paper HAT V4** | Pin 19 | `GPIO 10 (MOSI)` | Données SPI |
@@ -104,18 +103,12 @@ Il n'y a **strictement aucun conflit de broches** entre les deux cartes :
 | **e-Paper HAT V4** | Pin 11 | `GPIO 17` | Reset matériel écran (RST) |
 | **e-Paper HAT V4** | Pin 18 | `GPIO 24` | Détection d'état occupé (BUSY) |
 
-> [!TIP]
-> **Activation de la détection d'alimentation USB (Soudure UPS-Lite V1.2)** :
-> D'usine, le circuit de détection du chargeur n'est pas relié au GPIO 4 pour laisser la broche libre si non utilisée.
-> Pour activer la détection instantanée de coupure contact :
-> 1. Démontez l'UPS-Lite. Au dos du circuit imprimé (côté composants), repérez les **deux petits plots cuivrés (pads) côte à côte étiquetés PAD1 / PAD2** (proches de la prise micro-USB de charge).
-> 2. Déposez une **petite goutte d'étain** pour relier (ponter) ces deux plots.
-> 3. Remontez l'UPS-Lite sur le Pi Zero.
-> 
-> Dès cet instant :
-> - **5V USB branché** : le GPIO 4 passe à **`1` (HIGH)**.
-> - **5V USB débranché** : le GPIO 4 retombe immédiatement à **`0` (LOW)**.
-> La détection est instantanée, insensible au niveau de charge de la batterie, et permet de déclencher l'extinction propre à la seconde près.
+> [!NOTE]
+> **Surveillance 100% logicielle I2C (Zéro soudure, Zéro conflit GPIO)** :
+> L'ensemble de la gestion d'énergie repose exclusivement sur la jauge **MAX17040G** via le bus I2C matériel (adresse `0x36`).
+> - Aucune broche GPIO n'est requise pour la détection d'alimentation : toutes les broches GPIO restent libres pour l'écran e-Paper SPI et vos extensions.
+> - Aucune soudure ni modification physique de la carte UPS-Lite n'est nécessaire.
+> - Le système mesure avec précision la tension en millivolts et l'état de charge (SOC) pour piloter l'extinction propre et le mode surveillance parking.
 
 > [!IMPORTANT]
 > **Connexion de la nappe caméra** : Sur le connecteur CSI du Pi Zero, insérez la nappe délicatement avec les **pistes dorées orientées vers la face inférieure** (vers le circuit imprimé du Pi, face opposée au loquet noir).
@@ -316,22 +309,21 @@ L'adaptateur 12V allume-cigare alimente le Pi en **5V USB**. Voici exactement le
 ### Cas 1 : En Mode Bureau / Développement (`ENABLE_AUTO_SHUTDOWN=0`)
 - Le Pi **ne s'éteint pas**.
 - L'alimentation bascule instantanément sur la batterie LiPo 1000 mAh de l'UPS-Lite sans micro-coupure ni redémarrage.
-- Le dashboard web indique `⚠️ Sur Batterie LiPo` et affiche la tension réelle de la cellule (ex. 3.95V).
+- Le dashboard web et l'écran e-Paper affichent la tension et le pourcentage réel de la batterie.
 - Le système continue d'enregistrer, de diffuser le Wi-Fi et de rafraîchir l'e-Paper jusqu'à épuisement complet de la batterie (~1h15 à 1h30 d'autonomie).
 - Idéal pour configurer, développer, extraire des fichiers ou faire des tests sur table sans être interrompu.
 
 ### Cas 2 : En Mode Voiture (`ENABLE_AUTO_SHUTDOWN=1` & `power-monitor.service` actif)
 Dès que vous coupez le contact de la voiture :
-1. **Prise de relais instantanée** : L'UPS-Lite maintient le Pi Zero 2 W sous tension (0 milliseconde de coupure).
-2. **Détection de la coupure 5V** : Le service `power-monitor` détecte la perte du 5V externe (la tension batterie passe sous le seuil de 4.02V).
-3. **Temporisation de grâce (30 secondes par défaut)** :
-   - Un compte à rebours de 30 secondes démarre.
-   - *Si vous remettez le contact avant 30 secondes* (ex: calage, arrêt rapide à la pompe, redémarrage du moteur), la procédure d'extinction est automatiquement annulée et l'enregistrement continue normalement.
-4. **Arrêt gracieux et sécurisé** (à l'échéance des 30s) :
-   - **Clôture vidéo** : Envoi d'un signal `SIGTERM` au processus d'enregistrement. `ffmpeg` finalise proprement le conteneur fMP4 en écrivant la dernière frame et les index de segment.
+1. **Prise de relais instantanée** : L'UPS-Lite maintient le Pi Zero 2 W sous tension sans coupure.
+2. **Mode Sentinelle / Surveillance Parking** :
+   - La dashcam continue d'enregistrer sur sa batterie LiPo pour sécuriser votre véhicule en stationnement.
+   - Par défaut, l'enregistrement se poursuit jusqu'à ce que la batterie descende à **85%** (`PARKING_SHUTDOWN_BATTERY_PERCENT=85`, soit ~15 à 20 minutes de surveillance) ou jusqu'à la durée maximale configurée (`PARKING_MAX_DURATION_SEC=600`, soit 10 minutes).
+3. **Arrêt gracieux et sécurisé** (au seuil de parking ou sur seuil critique) :
+   - **Clôture vidéo** : Le démon envoie un signal `SIGTERM` au processus d'enregistrement. `ffmpeg` finalise proprement le conteneur fMP4 en écrivant la dernière frame et les index de segment.
    - **Affichage persistant** : L'écran e-Paper affiche l'écran de veille *"PI-DASHCAM ÉTEINT - Arrêt sécurisé terminé"* avec le pourcentage de batterie restante.
    - **Protection de la carte MicroSD** : Exécution d'un `sync` système pour flusher l'intégralité des tampons d'écriture en mémoire vers la carte Flash.
-   - **Extinction matérielle** : Lancement de `shutdown -h now`. Le système est hors tension en toute sécurité, la carte SD ne peut pas être corrompue.
+   - **Extinction matérielle** : Lancement de `shutdown -h now`. Le système est hors tension en toute sécurité, la carte SD ne peut pas être corrompue et la batterie conserve une charge suffisante pour le prochain trajet.
 
 ---
 
