@@ -95,6 +95,7 @@ class UPSSensor:
         self.active_addr = None
         self.chip_type = None  # 'CW2015' ou 'MAX17040'
         self._bus = None
+        self._history = []
 
     def connect(self):
         try:
@@ -181,20 +182,39 @@ class UPSSensor:
     def is_charging(self, voltage: Optional[float] = None, percent: Optional[float] = None) -> bool:
         """
         Détermine si la batterie est actuellement alimentée / en charge (USB 5V branché).
-        Sur l'UPS-Lite (4 pogo-pins : 5V, GND, SDA, SCL), la surveillance est 100% logicielle I2C :
-        - En charge, le régulateur TP4056 maintient la cellule LiPo >= 3.98V (ex: 4.05V à 85.6%).
-        - En décharge autonome sous la consommation du Pi Zero 2 W (~350mA), la tension chute sous 3.95V.
+        Sur l'UPS-Lite V1.2 (sans GPIO 4), la détection 100% I2C repose sur :
+        1. Seuil de tension active : sous la charge du Pi Zero 2 W (~350mA), seule une alimentation
+           externe branchée permet à la tension d'atteindre >= 4.01V (4.05V à 85%, 4.08V à 93%).
+           En décharge autonome (débranché), la tension chute immédiatement sous 3.98V (3.97V à 93.5%, 3.95V à 96.7%).
+        2. Tendance temporelle : si la batterie est à un niveau intermédiaire (<4.01V), on analyse
+           la pente du pourcentage et de la tension.
         """
         if voltage is None or percent is None:
             try:
                 voltage, percent = self.read_status()
             except Exception:
-                return True
+                return False
 
-        if voltage >= 3.98:
+        now = time.time()
+        self._history.append((now, voltage, percent))
+        if len(self._history) > 20:
+            self._history.pop(0)
+
+        # 1. Seuil franc haute tension : présence du chargeur TP4056
+        if voltage >= 4.01:
             return True
-        if percent >= 92.0 and voltage >= 3.90:
-            return True
+
+        # 2. Analyse de pente temporelle (sur 15s à 60s)
+        if len(self._history) >= 4:
+            old_time, old_v, old_pct = self._history[0]
+            dt = now - old_time
+            if dt >= 15.0:
+                d_pct = percent - old_pct
+                d_v = voltage - old_v
+                if d_pct > 0.1 or (d_pct >= 0.0 and d_v >= 0.02):
+                    return True
+                if d_pct < 0.0 or d_v < -0.02:
+                    return False
 
         return False
 
