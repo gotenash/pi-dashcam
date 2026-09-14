@@ -127,12 +127,16 @@ class EPaperDashboard:
 
     def get_battery_info(self):
         v, pct = 4.10, 95.0
+        ext = True
         if self.ups:
             try:
                 v, pct = self.ups.read_status()
+                if hasattr(self.ups, "is_charging"):
+                    ext = self.ups.is_charging(v, pct)
+                else:
+                    ext = bool(v >= 3.98)
             except Exception:
                 pass
-        ext = bool(v >= 4.08 and pct >= 92.0)
         return round(v, 2), round(pct, 0), ext
 
     def render_dashboard(self) -> Image.Image:
@@ -168,7 +172,8 @@ class EPaperDashboard:
         draw.text((6, 34), f"WiFi : {ip_addr}", font=self.font_med, fill=0)
 
         # Batterie
-        bat_str = f"🔋 {int(percent)}% ({voltage}V)"
+        power_icon = "⚡" if ext_power else "🔋"
+        bat_str = f"{power_icon} {int(percent)}% ({voltage}V)"
         draw.text((140, 34), bat_str, font=self.font_med, fill=0)
 
         # Ligne de séparation discrète

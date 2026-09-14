@@ -84,15 +84,25 @@ function updateDashboardUI(data) {
     }
 
     if (powerTagEl) {
-        if (percent <= 15) {
-            powerTagEl.className = "status-pill status-battery";
-            powerTagEl.textContent = "⚠️ Batterie Critique";
-        } else if (percent <= 30) {
-            powerTagEl.className = "status-pill status-battery";
-            powerTagEl.textContent = "🔋 Batterie Faible";
-        } else {
+        const isCharging = data.battery && data.battery.charging;
+        if (isCharging) {
             powerTagEl.className = "status-pill status-usb";
-            powerTagEl.textContent = "🔋 Batterie LiPo OK";
+            if (percent >= 98) {
+                powerTagEl.textContent = "⚡ USB Branché (Plein)";
+            } else {
+                powerTagEl.textContent = "⚡ En charge (USB)";
+            }
+        } else {
+            if (percent <= 15) {
+                powerTagEl.className = "status-pill status-danger";
+                powerTagEl.textContent = "🚨 Batterie Critique";
+            } else if (percent <= 30) {
+                powerTagEl.className = "status-pill status-battery";
+                powerTagEl.textContent = "⚠️ Batterie Faible";
+            } else {
+                powerTagEl.className = "status-pill status-battery";
+                powerTagEl.textContent = "🔋 Sur Batterie LiPo";
+            }
         }
     }
 

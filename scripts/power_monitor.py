@@ -178,6 +178,44 @@ class UPSSensor:
             percent = data_soc[0] + (data_soc[1] / 256.0)
             return round(voltage, 2), round(max(0.0, min(100.0, percent)), 1)
 
+    def is_charging(self, voltage: Optional[float] = None, percent: Optional[float] = None) -> bool:
+        """
+        Détermine si la batterie est actuellement alimentée / en charge (USB 5V branché).
+        Combine :
+        1. Test physique direct de la broche GPIO 4 de l'UPS-Lite (si connectée)
+        2. Profil de tension I2C sous charge du Pi : en charge le régulateur TP4056 maintient
+           la cellule >= 3.98V (ex: 4.05V à 85%), alors qu'en décharge autonome elle chute sous 3.95V.
+        """
+        # 1. Vérification matérielle directe sur GPIO 4 (pinctrl natif sous Bookworm)
+        try:
+            res = subprocess.run(
+                ["pinctrl", "get", "4"],
+                capture_output=True,
+                text=True,
+                timeout=0.3
+            )
+            if res.returncode == 0 and "hi" in res.stdout:
+                return True
+        except Exception:
+            pass
+
+        # 2. Analyse télémétrique I2C
+        if voltage is None or percent is None:
+            try:
+                voltage, percent = self.read_status()
+            except Exception:
+                return True
+
+        # En charge sur UPS-Lite, la tension aux bornes de la LiPo est maintenue au-dessus de 3.98V
+        # (ex: 4.05V à 85.6% de charge comme mesuré sur le Pi Zero 2 W).
+        # En décharge autonome sous la charge du Pi, elle chute rapidement sous 3.95V.
+        if voltage >= 3.98:
+            return True
+        if percent >= 92.0 and voltage >= 3.90:
+            return True
+
+        return False
+
 
 # Alias pour rétrocompatibilité
 MAX17040 = UPSSensor
@@ -263,12 +301,12 @@ class PowerMonitorDaemon:
                 max_parking_duration = int(self.config.get("PARKING_MAX_DURATION_SEC", 600))
                 auto_shutdown_enabled = bool(self.config.get("ENABLE_AUTO_SHUTDOWN", 0))
 
-                # Détection alimentation vs décharge (basée sur tension et niveau)
-                is_charging_or_full = bool(voltage >= 4.08 and percent >= 92.0)
+                # Détection alimentation vs décharge
+                is_charging_or_full = self.ups.is_charging(voltage, percent)
 
                 # Log d'état périodique (toutes les 60 secondes si stable)
                 if now - last_log_time >= 60.0:
-                    status_str = "USB ALIMENTÉ (Plein/Charge)" if is_charging_or_full else "SUR BATTERIE (Décharge)"
+                    status_str = "USB ALIMENTÉ (En charge)" if is_charging_or_full else "SUR BATTERIE (Décharge)"
                     logging.info(
                         "Statut: %s | Batterie: %.1f%% | Tension: %.2fV",
                         status_str, percent, voltage
@@ -332,13 +370,14 @@ def print_status_and_exit(config: Dict[str, Any]):
 
     try:
         voltage, percent = ups.read_status()
+        is_charging = ups.is_charging(voltage, percent)
         print(f"Jauge détectée : {ups.chip_type} (Adresse I2C: 0x{ups.active_addr:02X})")
         print(f"  - Tension batterie : {voltage:.3f} V")
         print(f"  - Charge restante  : {percent:.1f} %")
-        if voltage >= 4.08 and percent >= 92.0:
-            print("  - État estimé     : USB Alimenté (Batterie pleine ou en floating)")
+        if is_charging:
+            print("  - État estimé     : ⚡ USB Alimenté (En charge)")
         else:
-            print("  - État estimé     : Sur batterie (Fonctionnement autonome)")
+            print("  - État estimé     : 🔋 Sur batterie (Fonctionnement autonome)")
     except Exception as e:
         print(f"  - Erreur de communication I2C: {e}")
     finally:

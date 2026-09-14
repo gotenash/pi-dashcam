@@ -111,15 +111,19 @@ def api_status():
     # 1. Télémétrie batterie UPS-Lite
     battery_v = 0.0
     battery_pct = 0.0
+    is_charging = False
     if ups_sensor:
         try:
             battery_v, battery_pct = ups_sensor.read_status()
             battery_v = round(battery_v, 2)
             battery_pct = round(battery_pct, 1)
+            is_charging = ups_sensor.is_charging(battery_v, battery_pct)
         except Exception:
             battery_v, battery_pct = 4.10, 95.0
+            is_charging = True
     else:
         battery_v, battery_pct = 4.10, 95.0
+        is_charging = True
 
     # 2. Métriques système
     disk = get_disk_statistics(storage_dir)
@@ -132,6 +136,7 @@ def api_status():
         "battery": {
             "voltage": battery_v,
             "percent": battery_pct,
+            "charging": is_charging,
         },
         "system": {
             "cpu_temp": cpu_temp,
