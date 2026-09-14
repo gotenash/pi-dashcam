@@ -184,31 +184,125 @@ async function toggleRecording() {
 }
 
 // 4. Galerie Vidéos
+let selectedVideos = new Set();
+let allCurrentVideos = [];
+
+function updateSelectionUI() {
+    const count = selectedVideos.size;
+    const btnDeleteSel = document.getElementById("btn-delete-selected");
+    const selCountBadge = document.getElementById("selected-count-badge");
+    const selSummary = document.getElementById("selected-summary");
+    const selectAllChk = document.getElementById("select-all-chk");
+
+    if (selCountBadge) selCountBadge.textContent = count;
+    if (btnDeleteSel) {
+        if (count > 0) {
+            btnDeleteSel.classList.remove("hidden");
+        } else {
+            btnDeleteSel.classList.add("hidden");
+        }
+    }
+    if (selSummary) {
+        if (count > 0) {
+            selSummary.textContent = `${count} sélectionnée(s)`;
+            selSummary.classList.remove("hidden");
+        } else {
+            selSummary.classList.add("hidden");
+        }
+    }
+    if (selectAllChk && allCurrentVideos.length > 0) {
+        selectAllChk.checked = (count === allCurrentVideos.length);
+        selectAllChk.indeterminate = (count > 0 && count < allCurrentVideos.length);
+    }
+}
+
+function toggleVideoSelection(filename, isSelected) {
+    if (isSelected) {
+        selectedVideos.add(filename);
+    } else {
+        selectedVideos.delete(filename);
+    }
+    document.querySelectorAll(".video-item").forEach(item => {
+        const chk = item.querySelector(".video-select-chk");
+        if (chk && chk.value === filename) {
+            chk.checked = isSelected;
+            if (isSelected) {
+                item.classList.add("selected");
+            } else {
+                item.classList.remove("selected");
+            }
+        }
+    });
+    updateSelectionUI();
+}
+
+function onVideoItemClick(event, filename) {
+    const isSelected = !selectedVideos.has(filename);
+    toggleVideoSelection(filename, isSelected);
+}
+
+function toggleSelectAll(checked) {
+    if (checked) {
+        allCurrentVideos.forEach(v => selectedVideos.add(v.filename));
+    } else {
+        selectedVideos.clear();
+    }
+    document.querySelectorAll(".video-item").forEach(item => {
+        const chk = item.querySelector(".video-select-chk");
+        if (chk) {
+            chk.checked = checked;
+            if (checked) {
+                item.classList.add("selected");
+            } else {
+                item.classList.remove("selected");
+            }
+        }
+    });
+    updateSelectionUI();
+}
+
 async function loadVideos() {
     const listEl = document.getElementById("videos-list");
     const countEl = document.getElementById("videos-count");
+    const toolbarEl = document.getElementById("video-toolbar");
     if (!listEl) return;
 
     try {
         const res = await fetch("/api/videos");
         const data = await res.json();
+        allCurrentVideos = data.videos || [];
 
         if (countEl) countEl.textContent = data.count;
 
-        if (data.videos.length === 0) {
+        // Nettoyer les sélections qui n'existeraient plus
+        const validFilenames = new Set(allCurrentVideos.map(v => v.filename));
+        for (const fname of selectedVideos) {
+            if (!validFilenames.has(fname)) selectedVideos.delete(fname);
+        }
+
+        if (allCurrentVideos.length === 0) {
+            if (toolbarEl) toolbarEl.classList.add("hidden");
             listEl.innerHTML = '<div class="loading-spinner">Aucune vidéo enregistrée pour le moment.</div>';
+            updateSelectionUI();
             return;
         }
 
+        if (toolbarEl) toolbarEl.classList.remove("hidden");
+
         let html = "";
-        data.videos.forEach(v => {
+        allCurrentVideos.forEach((v, idx) => {
+            const isChecked = selectedVideos.has(v.filename);
+            const itemClass = isChecked ? "video-item selected" : "video-item";
             html += `
-                <div class="video-item">
+                <div class="${itemClass}" onclick="onVideoItemClick(event, '${escapeHtml(v.filename)}')">
+                    <div class="video-checkbox-wrapper" onclick="event.stopPropagation()">
+                        <input type="checkbox" class="video-select-chk" value="${escapeHtml(v.filename)}" ${isChecked ? "checked" : ""} onchange="toggleVideoSelection('${escapeHtml(v.filename)}', this.checked)">
+                    </div>
                     <div class="video-info">
                         <span class="video-name">${escapeHtml(v.filename)}</span>
                         <span class="video-meta">📅 ${v.mtime} | 📦 ${v.size_mb} Mo</span>
                     </div>
-                    <div class="video-actions">
+                    <div class="video-actions" onclick="event.stopPropagation()">
                         <button class="btn btn-secondary btn-sm" onclick="playVideo('${v.url}', '${escapeHtml(v.filename)}')">
                             ▶️ Lire
                         </button>
@@ -223,6 +317,7 @@ async function loadVideos() {
             `;
         });
         listEl.innerHTML = html;
+        updateSelectionUI();
     } catch (err) {
         listEl.innerHTML = '<div class="loading-spinner">Erreur de chargement des vidéos.</div>';
     }
@@ -259,8 +354,63 @@ async function deleteVideo(filename) {
         const res = await fetch(`/api/videos/${encodeURIComponent(filename)}`, { method: "DELETE" });
         const data = await res.json();
         if (data.success) {
-            showToast(`Vidéo ${filename} supprimée`);
+            showToast(`Vidéo supprimée`);
+            selectedVideos.delete(filename);
             loadVideos();
+            fetchStatus();
+        } else {
+            showToast(data.error || "Erreur lors de la suppression", true);
+        }
+    } catch (err) {
+        showToast("Erreur réseau", true);
+    }
+}
+
+async function deleteSelectedVideos() {
+    const count = selectedVideos.size;
+    if (count === 0) return;
+    if (!confirm(`Supprimer définitivement les ${count} vidéo(s) sélectionnée(s) ?`)) return;
+
+    const filenames = Array.from(selectedVideos);
+    try {
+        const res = await fetch("/api/videos/delete-batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filenames })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(`${data.deleted_count} vidéo(s) supprimée(s)`);
+            selectedVideos.clear();
+            loadVideos();
+            fetchStatus();
+        } else {
+            showToast(data.error || "Erreur lors de la suppression", true);
+        }
+    } catch (err) {
+        showToast("Erreur réseau", true);
+    }
+}
+
+async function deleteAllVideos() {
+    const total = allCurrentVideos.length;
+    if (total === 0) {
+        showToast("Aucune vidéo à supprimer.");
+        return;
+    }
+    if (!confirm(`⚠️ ATTENTION : Êtes-vous sûr de vouloir supprimer TOUTES les vidéos (${total}) ?\nCette opération est irréversible.`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/videos/delete-all", { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || "Toutes les vidéos ont été supprimées");
+            selectedVideos.clear();
+            closePlayer();
+            loadVideos();
+            fetchStatus();
         } else {
             showToast(data.error || "Erreur lors de la suppression", true);
         }

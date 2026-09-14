@@ -158,6 +158,24 @@
                         </button>
                     </div>
 
+                    <div id="video-toolbar" class="video-toolbar hidden">
+                        <div class="toolbar-left">
+                            <label class="select-all-label">
+                                <input type="checkbox" id="select-all-chk" onchange="toggleSelectAll(this.checked)">
+                                <span>Tout sélectionner</span>
+                            </label>
+                            <span id="selected-summary" class="selected-summary hidden">0 sélectionnée(s)</span>
+                        </div>
+                        <div class="toolbar-right">
+                            <button id="btn-delete-selected" class="btn btn-danger btn-sm hidden" onclick="deleteSelectedVideos()">
+                                🗑️ Supprimer (<span id="selected-count-badge">0</span>)
+                            </button>
+                            <button id="btn-delete-all" class="btn btn-outline-danger btn-sm" onclick="deleteAllVideos()">
+                                💥 Tout supprimer
+                            </button>
+                        </div>
+                    </div>
+
                     <div id="video-player-modal" class="video-player-container hidden">
                         <div class="player-header">
                             <span id="player-title">Lecture vidéo</span>

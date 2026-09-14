@@ -213,6 +213,79 @@ def delete_video(filename: str):
     return jsonify({"error": "Fichier introuvable"}), 404
 
 
+@app.route("/api/videos/delete-batch", methods=["POST"])
+def delete_videos_batch():
+    """Supprime une sélection de vidéos."""
+    storage_dir = CONFIG.get("STORAGE_DIR", "/var/media/dashcam")
+    data = request.get_json(silent=True) or {}
+    filenames = data.get("filenames", [])
+
+    if not isinstance(filenames, list) or not filenames:
+        return jsonify({"error": "Aucune vidéo spécifiée"}), 400
+
+    deleted = 0
+    errors = []
+    base_dir = os.path.abspath(storage_dir)
+
+    for fname in filenames:
+        if not isinstance(fname, str) or not fname:
+            continue
+        safe_path = os.path.abspath(os.path.join(storage_dir, fname))
+        if not safe_path.startswith(base_dir):
+            errors.append(f"{fname}: accès interdit")
+            continue
+        if os.path.exists(safe_path) and os.path.isfile(safe_path):
+            try:
+                os.remove(safe_path)
+                deleted += 1
+            except Exception as e:
+                errors.append(f"{fname}: {e}")
+
+    return jsonify({
+        "success": True,
+        "deleted_count": deleted,
+        "errors": errors,
+        "message": f"{deleted} vidéo(s) supprimée(s)"
+    })
+
+
+@app.route("/api/videos/delete-all", methods=["POST"])
+def delete_videos_all():
+    """Supprime tous les fichiers vidéo enregistrés."""
+    storage_dir = CONFIG.get("STORAGE_DIR", "/var/media/dashcam")
+    video_files = glob.glob(os.path.join(storage_dir, "*.mp4"))
+
+    # Si la dashcam est active, protéger le segment actif en cours d'écriture par ffmpeg
+    is_recording = get_service_status("dashcam.service")
+    active_file = None
+    if is_recording and video_files:
+        video_files.sort(key=os.path.getmtime, reverse=True)
+        active_file = video_files[0]
+
+    deleted = 0
+    errors = []
+
+    for fpath in video_files:
+        if is_recording and fpath == active_file:
+            continue
+        try:
+            os.remove(fpath)
+            deleted += 1
+        except Exception as e:
+            errors.append(f"{os.path.basename(fpath)}: {e}")
+
+    msg = f"{deleted} vidéo(s) supprimée(s)"
+    if is_recording and active_file:
+        msg += " (le segment vidéo en cours a été conservé)"
+
+    return jsonify({
+        "success": True,
+        "deleted_count": deleted,
+        "errors": errors,
+        "message": msg
+    })
+
+
 @app.route("/api/snapshot")
 def api_snapshot():
     """
