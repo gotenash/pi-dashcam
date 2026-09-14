@@ -263,11 +263,15 @@ MAX_DISK_USAGE_PERCENT=85
 # Mode extinction automatique (0 = Désactivé pour le bureau, 1 = Activé pour la voiture)
 ENABLE_AUTO_SHUTDOWN=0
 
-# Délai de grâce avant extinction lors d'une coupure du 5V USB (secondes)
-SHUTDOWN_DELAY_SEC=30
+# Seuil de batterie pour l'extinction en mode surveillance parking (%)
+PARKING_SHUTDOWN_BATTERY_PERCENT=85
 
-# Seuil critique de sécurité LiPo (%)
+# Durée maximale de surveillance sur batterie en secondes (600 = 10 minutes)
+PARKING_MAX_DURATION_SEC=600
+
+# Seuil critique d'urgence absolue pour protéger la cellule LiPo
 CRITICAL_BATTERY_PERCENT=10
+CRITICAL_BATTERY_VOLTAGE=3.40
 
 # Paramètres Wi-Fi Hotspot & Web
 HOTSPOT_SSID="Pi-Dashcam"
