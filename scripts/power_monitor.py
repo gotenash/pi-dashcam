@@ -119,15 +119,12 @@ class UPSSensor:
 
         for addr in candidates:
             try:
-                self._bus.read_byte_data(addr, 0x02)
+                d = self._bus.read_i2c_block_data(addr, 0x02, 2)
+                if len(d) < 2:
+                    continue
                 self.active_addr = addr
                 if addr == 0x32:
                     self.chip_type = "CW2015"
-                    # Réveil / QuickStart si nécessaire
-                    try:
-                        self._bus.write_word_data(0x32, 0x0A, 0x30)
-                    except Exception:
-                        pass
                 else:
                     self.chip_type = "MAX17040"
                 break
@@ -330,12 +327,12 @@ class PowerMonitorDaemon:
 
 def print_status_and_exit(config: Dict[str, Any]):
     """Affiche l'état courant de la batterie via I2C puis quitte."""
-    print("=== Diagnostic Alimentation & Batterie (MAX17040G I2C) ===")
-    ups = MAX17040(bus_num=config["UPS_I2C_BUS"], address=config["UPS_I2C_ADDR"])
+    print("=== Diagnostic Alimentation & Batterie (UPS-Lite I2C) ===")
+    ups = UPSSensor(bus_num=config["UPS_I2C_BUS"], address=config.get("UPS_I2C_ADDR"))
 
     try:
         voltage, percent = ups.read_status()
-        print(f"Jauge MAX17040 (0x{config['UPS_I2C_ADDR']:02X}) :")
+        print(f"Jauge détectée : {ups.chip_type} (Adresse I2C: 0x{ups.active_addr:02X})")
         print(f"  - Tension batterie : {voltage:.3f} V")
         print(f"  - Charge restante  : {percent:.1f} %")
         if voltage >= 4.08 and percent >= 92.0:

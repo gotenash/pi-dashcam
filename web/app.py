@@ -27,7 +27,7 @@ except ImportError:
             "WEB_PORT": 5000,
             "WEB_HOST": "0.0.0.0",
             "UPS_I2C_BUS": 1,
-            "UPS_I2C_ADDR": 0x36,
+            "UPS_I2C_ADDR": 0x32,
             "SEGMENT_DURATION_SEC": 180,
             "VIDEO_WIDTH": 1920,
             "VIDEO_HEIGHT": 1080,
@@ -40,13 +40,13 @@ except ImportError:
 app = Flask(__name__)
 CONFIG = load_config()
 
-# Instance télémétrie batterie UPS-Lite (I2C 0x36)
+# Instance télémétrie batterie UPS-Lite (CW2015 0x32 ou MAX17040 0x36)
 ups_sensor = None
 if MAX17040:
     try:
         ups_sensor = MAX17040(
             bus_num=CONFIG.get("UPS_I2C_BUS", 1),
-            address=CONFIG.get("UPS_I2C_ADDR", 0x36)
+            address=CONFIG.get("UPS_I2C_ADDR", 0x32)
         )
     except Exception:
         ups_sensor = None

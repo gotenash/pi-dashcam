@@ -32,7 +32,7 @@ except ImportError:
             "HOTSPOT_SSID": "Pi-Dashcam",
             "HOTSPOT_IP": "10.42.0.1",
             "UPS_I2C_BUS": 1,
-            "UPS_I2C_ADDR": 0x36,
+            "UPS_I2C_ADDR": 0x32,
         }
     MAX17040 = None
 
@@ -63,13 +63,13 @@ class EPaperDashboard:
         self.running = True
         self.full_refresh_counter = 0
 
-        # Capteur UPS I2C
+        # Capteur UPS I2C (auto-détection CW2015 0x32 / MAX17040 0x36)
         self.ups = None
         if MAX17040:
             try:
                 self.ups = MAX17040(
                     bus_num=self.config.get("UPS_I2C_BUS", 1),
-                    address=self.config.get("UPS_I2C_ADDR", 0x36)
+                    address=self.config.get("UPS_I2C_ADDR", 0x32)
                 )
             except Exception:
                 self.ups = None
