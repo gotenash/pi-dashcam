@@ -108,12 +108,12 @@ class EPaperDashboard:
                 text=True,
                 timeout=2
             )
-            ips = res.stdout.strip().split()
+            ips = [ip for ip in res.stdout.strip().split() if not ip.startswith("127.")]
             if ips:
                 return ips[0]
         except Exception:
             pass
-        return self.config.get("HOTSPOT_IP", "10.42.0.1")
+        return "Non connecté"
 
     def get_disk_info(self):
         storage_dir = self.config.get("STORAGE_DIR", "/var/media/dashcam")

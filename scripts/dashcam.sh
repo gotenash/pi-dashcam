@@ -134,6 +134,18 @@ trap cleanup_and_exit SIGINT SIGTERM SIGHUP
 cleanup_disk_space
 start_background_manager
 
+# Secours automatique Wi-Fi : si hors de portée en voiture, forcer le point d'accès
+(
+    sleep 25
+    if command -v nmcli >/dev/null 2>&1; then
+        if ! nmcli -t -f DEVICE,STATE device 2>/dev/null | grep -q '^wlan0:connected'; then
+            log "Wi-Fi non connecté après 25s, activation du Hotspot de secours..."
+            rfkill unblock wifi 2>/dev/null || true
+            nmcli connection up "Pi-Dashcam-Hotspot" 2>/dev/null || true
+        fi
+    fi
+) &
+
 # 7. Pipeline de capture et d'encodage MP4 robuste
 # Format cible : dashcam_YYYY-MM-DD_HH-MM-SS.mp4
 TARGET_PATTERN="${STORAGE_DIR}/${FILENAME_PREFIX}%Y-%m-%d_%H-%M-%S.mp4"

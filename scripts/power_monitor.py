@@ -53,7 +53,7 @@ def load_config() -> Dict[str, Any]:
                                 "UPS_I2C_BUS", "PARKING_MAX_DURATION_SEC", "SHUTDOWN_DELAY_SEC",
                                 "SEGMENT_DURATION_SEC", "VIDEO_WIDTH", "VIDEO_HEIGHT", "VIDEO_FPS",
                                 "VIDEO_BITRATE", "MAX_DISK_USAGE_PERCENT", "MIN_FREE_SPACE_MB", "WEB_PORT",
-                                "VIDEO_ROTATION"
+                                "VIDEO_ROTATION", "ENABLE_AUTO_SHUTDOWN"
                             )
                             float_keys = (
                                 "PARKING_SHUTDOWN_BATTERY_PERCENT",
@@ -302,7 +302,7 @@ class PowerMonitorDaemon:
                 now = time.time()
                 parking_threshold = float(self.config.get("PARKING_SHUTDOWN_BATTERY_PERCENT", 85.0))
                 max_parking_duration = int(self.config.get("PARKING_MAX_DURATION_SEC", 600))
-                auto_shutdown_enabled = bool(self.config.get("ENABLE_AUTO_SHUTDOWN", 0))
+                auto_shutdown_enabled = bool(int(self.config.get("ENABLE_AUTO_SHUTDOWN", 0)))
 
                 # Détection alimentation vs décharge
                 is_charging_or_full = self.ups.is_charging(voltage, percent)

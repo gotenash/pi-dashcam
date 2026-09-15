@@ -136,6 +136,26 @@ function updateDashboardUI(data) {
         powerMonEl.style.color = data.system.power_monitor ? "var(--accent-green)" : "var(--accent-red)";
     }
 
+    // État Hotspot Wi-Fi
+    if (data.system && data.system.hotspot) {
+        const hs = data.system.hotspot;
+        currentHotspotState = hs.active;
+        const dashHsEl = document.getElementById("dash-hotspot-status");
+        if (dashHsEl) {
+            if (hs.active) {
+                dashHsEl.textContent = `Actif (${hs.ssid})`;
+                dashHsEl.style.color = "var(--accent-green)";
+            } else if (hs.mode === "client") {
+                dashHsEl.textContent = `Wi-Fi Client (${hs.client_ssid || "Connecté"})`;
+                dashHsEl.style.color = "var(--accent-blue)";
+            } else {
+                dashHsEl.textContent = "Inactif";
+                dashHsEl.style.color = "var(--text-muted)";
+            }
+        }
+        updateHotspotUI(hs);
+    }
+
     // État Enregistrement Dashcam
     currentRecordingState = data.system.recording;
     const recBadge = document.getElementById("rec-badge");
@@ -560,11 +580,17 @@ async function loadConfig() {
         const diskMaxEl = document.getElementById("cfg-disk-max");
         const resSelect = document.getElementById("cfg-resolution");
         const rotationEl = document.getElementById("cfg-rotation");
+        const autoShutdownEl = document.getElementById("cfg-auto-shutdown");
+        const thresholdEl = document.getElementById("cfg-battery-threshold");
+        const parkingDurEl = document.getElementById("cfg-parking-duration");
 
         if (durationEl && cfg.SEGMENT_DURATION_SEC) durationEl.value = cfg.SEGMENT_DURATION_SEC;
         if (delayEl && cfg.SHUTDOWN_DELAY_SEC) delayEl.value = cfg.SHUTDOWN_DELAY_SEC;
         if (diskMaxEl && cfg.MAX_DISK_USAGE_PERCENT) diskMaxEl.value = cfg.MAX_DISK_USAGE_PERCENT;
         if (rotationEl && cfg.VIDEO_ROTATION !== undefined) rotationEl.value = cfg.VIDEO_ROTATION;
+        if (autoShutdownEl && cfg.ENABLE_AUTO_SHUTDOWN !== undefined) autoShutdownEl.value = cfg.ENABLE_AUTO_SHUTDOWN;
+        if (thresholdEl && cfg.PARKING_SHUTDOWN_BATTERY_PERCENT !== undefined) thresholdEl.value = parseInt(cfg.PARKING_SHUTDOWN_BATTERY_PERCENT);
+        if (parkingDurEl && cfg.PARKING_MAX_DURATION_SEC !== undefined) parkingDurEl.value = cfg.PARKING_MAX_DURATION_SEC;
 
         if (resSelect && cfg.VIDEO_HEIGHT) {
             resSelect.value = cfg.VIDEO_HEIGHT >= 1080 ? "1080p30" : "720p30";
@@ -604,6 +630,9 @@ async function saveConfig(event) {
         VIDEO_ROTATION: parseInt(formData.get("VIDEO_ROTATION") || 0),
         SHUTDOWN_DELAY_SEC: parseInt(formData.get("SHUTDOWN_DELAY_SEC")),
         MAX_DISK_USAGE_PERCENT: parseInt(formData.get("MAX_DISK_USAGE_PERCENT")),
+        ENABLE_AUTO_SHUTDOWN: parseInt(formData.get("ENABLE_AUTO_SHUTDOWN") || 1),
+        PARKING_SHUTDOWN_BATTERY_PERCENT: parseInt(formData.get("PARKING_SHUTDOWN_BATTERY_PERCENT") || 85),
+        PARKING_MAX_DURATION_SEC: parseInt(formData.get("PARKING_MAX_DURATION_SEC") || 600),
     };
 
     try {
@@ -650,14 +679,126 @@ async function restartDashcamService() {
             showToast("Dashcam redémarrée !");
             fetchStatus();
         } else {
-            showToast("Erreur lors du redémarrage", true);
+            showToast(data.error || "Erreur lors du redémarrage", true);
         }
     } catch (err) {
         showToast("Erreur réseau", true);
     }
 }
 
-// 7. Utilitaires
+// 7. Gestion du Point d'Accès Wi-Fi
+let currentHotspotState = false;
+
+function updateHotspotUI(hs) {
+    const badge = document.getElementById("hotspot-badge");
+    const btn = document.getElementById("btn-toggle-hotspot");
+    const btnText = document.getElementById("hotspot-btn-text");
+    const subtext = document.getElementById("hotspot-subtext");
+
+    if (subtext && hs.ssid) {
+        subtext.innerHTML = `SSID : <strong>${escapeHtml(hs.ssid)}</strong> (${escapeHtml(hs.ip || "192.168.4.1")})`;
+    }
+
+    if (hs.active) {
+        if (badge) {
+            badge.className = "badge";
+            badge.style.background = "rgba(16, 185, 129, 0.15)";
+            badge.style.color = "var(--accent-green)";
+            badge.style.border = "1px solid rgba(16, 185, 129, 0.3)";
+            badge.textContent = "ACTIF";
+        }
+        if (btn) {
+            btn.className = "btn btn-warning btn-block";
+        }
+        if (btnText) {
+            btnText.textContent = "⏹️ Désactiver le Point d'Accès";
+        }
+    } else {
+        if (badge) {
+            badge.className = "badge";
+            badge.style.background = "rgba(100, 116, 139, 0.2)";
+            badge.style.color = "var(--text-muted)";
+            badge.style.border = "1px solid var(--border-color)";
+            badge.textContent = "INACTIF";
+        }
+        if (btn) {
+            btn.className = "btn btn-primary btn-block";
+        }
+        if (btnText) {
+            btnText.textContent = "📶 Activer le Point d'Accès";
+        }
+    }
+}
+
+async function toggleHotspot() {
+    const willDisable = currentHotspotState;
+    let confirmMsg = "";
+    if (willDisable) {
+        confirmMsg = "⚠️ Attention : Si votre smartphone est actuellement connecté au Wi-Fi 'Pi-Dashcam', désactiver le point d'accès va interrompre immédiatement la connexion au tableau de bord.\n\nVoulez-vous vraiment désactiver le point d'accès ?";
+    } else {
+        confirmMsg = "Activer le point d'accès Wi-Fi (Pi-Dashcam) ?";
+    }
+
+    if (!confirm(confirmMsg)) return;
+
+    const btn = document.getElementById("btn-toggle-hotspot");
+    if (btn) btn.disabled = true;
+
+    showToast(willDisable ? "Désactivation du Wi-Fi..." : "Activation du Wi-Fi...");
+
+    try {
+        const res = await fetch("/api/hotspot/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: willDisable ? "disable" : "enable" })
+        });
+        const data = await res.json();
+        if (data.success) {
+            currentHotspotState = data.hotspot.active;
+            updateHotspotUI(data.hotspot);
+            showToast(data.hotspot.active ? "Point d'accès activé !" : "Point d'accès désactivé.");
+            fetchStatus();
+        } else {
+            showToast(data.error || "Erreur lors de la modification", true);
+        }
+    } catch (err) {
+        if (willDisable) {
+            showToast("Point d'accès désactivé (connexion coupée).");
+            currentHotspotState = false;
+            updateHotspotUI({ active: false });
+        } else {
+            showToast("Erreur de communication avec le serveur", true);
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// 8. Extinction Propre du Système
+function showShutdownOverlay() {
+    const overlay = document.getElementById("shutdown-overlay");
+    if (overlay) {
+        overlay.classList.remove("hidden");
+    }
+}
+
+async function shutdownSystem() {
+    const confirmMsg = "⚠️ Voulez-vous vraiment éteindre le Raspberry Pi ?\n\n- La vidéo en cours sera finalisée et enregistrée.\n- Les données de la carte microSD seront sécurisées.\n- Le système s'éteindra complètement.\n\nContinuer l'extinction ?";
+    if (!confirm(confirmMsg)) return;
+
+    showShutdownOverlay();
+
+    try {
+        await fetch("/api/action/shutdown", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+    } catch (err) {
+        // La perte de connexion réseau est normale lors de l'arrêt du Pi
+    }
+}
+
+// 9. Utilitaires
 function showToast(msg, isError = false) {
     const toast = document.getElementById("toast");
     if (!toast) return;

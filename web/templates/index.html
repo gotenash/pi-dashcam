@@ -17,11 +17,14 @@
                     <span class="host-tag">Raspberry Pi Zero 2 W</span>
                 </div>
             </div>
-            <div class="header-right">
+            <div class="header-right" style="display: flex; align-items: center; gap: 8px;">
                 <div id="rec-badge" class="badge badge-rec">
                     <span class="pulse-dot"></span>
                     <span id="rec-text">REC</span>
                 </div>
+                <button id="btn-header-power" class="btn-power-circle" title="Éteindre le Raspberry Pi" onclick="shutdownSystem()">
+                    ⏻
+                </button>
             </div>
         </header>
 
@@ -104,6 +107,10 @@
 
                 <!-- Informations système secondaires -->
                 <div class="card info-card">
+                    <div class="info-row">
+                        <span class="info-label">📶 Point d'accès Wi-Fi :</span>
+                        <span id="dash-hotspot-status" class="info-value">--</span>
+                    </div>
                     <div class="info-row">
                         <span class="info-label">🌡️ Température CPU :</span>
                         <span id="cpu-temp" class="info-value">-- °C</span>
@@ -265,15 +272,81 @@
                             </select>
                         </div>
 
+                        <div class="form-divider-title" style="margin: 18px 0 10px; font-size: 0.85rem; font-weight: 700; color: var(--accent-blue); text-transform: uppercase; letter-spacing: 0.5px;">
+                            🔋 Surveillance & Extinction sur Batterie
+                        </div>
+
+                        <div class="form-group">
+                            <label for="cfg-auto-shutdown">Extinction automatique sur batterie</label>
+                            <select id="cfg-auto-shutdown" name="ENABLE_AUTO_SHUTDOWN" class="form-control">
+                                <option value="1" selected>Activée (recommandé en voiture)</option>
+                                <option value="0">Désactivée (mode bureau)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="cfg-battery-threshold">Seuil d'extinction batterie (%)</label>
+                            <select id="cfg-battery-threshold" name="PARKING_SHUTDOWN_BATTERY_PERCENT" class="form-control">
+                                <option value="85" selected>85 % (~15 à 20 min de surveillance parking)</option>
+                                <option value="75">75 % (~30 min de surveillance parking)</option>
+                                <option value="50">50 % (~1h de surveillance parking)</option>
+                                <option value="30">30 % (~1h30 de surveillance parking)</option>
+                                <option value="20">20 % (surveillance prolongée)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="cfg-parking-duration">Durée max sur batterie avant arrêt</label>
+                            <select id="cfg-parking-duration" name="PARKING_MAX_DURATION_SEC" class="form-control">
+                                <option value="300">5 minutes</option>
+                                <option value="600" selected>10 minutes (recommandé)</option>
+                                <option value="900">15 minutes</option>
+                                <option value="1800">30 minutes</option>
+                                <option value="0">Illimitée (filme jusqu'au seuil % batterie)</option>
+                            </select>
+                        </div>
+
                         <button type="submit" class="btn btn-primary btn-block">
                             💾 Enregistrer les réglages
                         </button>
                     </form>
+                </div>
 
-                    <hr class="divider">
+                <!-- CARTE GESTION DU SYSTÈME & EXTINCTION -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header space-between">
+                        <span class="card-title">Gestion du Système</span>
+                        <span class="badge" style="background: rgba(239, 68, 68, 0.15); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.3); font-size: 0.75rem;">Alimentation</span>
+                    </div>
+                    <p class="card-tip">
+                        L'extinction ordonnée finalise la vidéo en cours d'enregistrement et sécurise la carte microSD avant la coupure d'alimentation.
+                    </p>
+                    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
+                        <button class="btn btn-outline btn-block" onclick="restartDashcamService()">
+                            🔄 Redémarrer l'enregistrement
+                        </button>
+                        <button class="btn btn-danger btn-block" onclick="shutdownSystem()" style="font-weight: 700; font-size: 0.95rem;">
+                            🛑 Éteindre le Raspberry Pi
+                        </button>
+                    </div>
+                </div>
 
-                    <button class="btn btn-outline btn-block" onclick="restartDashcamService()">
-                        🔄 Redémarrer l'enregistrement
+                <!-- CARTE POINT D'ACCÈS WI-FI (HOTSPOT) -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header space-between">
+                        <div>
+                            <span class="card-title">Point d'Accès Wi-Fi</span>
+                            <div id="hotspot-subtext" class="card-tip" style="margin-top: 2px;">
+                                SSID : <strong>Pi-Dashcam</strong> (192.168.4.1)
+                            </div>
+                        </div>
+                        <span id="hotspot-badge" class="badge">--</span>
+                    </div>
+                    <p class="card-tip">
+                        Permet de connecter votre smartphone directement au Raspberry Pi en voiture pour visualiser le cadrage ou télécharger les vidéos sans box Internet.
+                    </p>
+                    <button id="btn-toggle-hotspot" class="btn btn-warning btn-block" onclick="toggleHotspot()">
+                        <span id="hotspot-btn-text">Désactiver le Point d'Accès</span>
                     </button>
                 </div>
             </section>
@@ -281,6 +354,18 @@
 
         <!-- Notification Toast -->
         <div id="toast" class="toast hidden"></div>
+
+        <!-- Overlay Extinction Propre -->
+        <div id="shutdown-overlay" class="shutdown-overlay hidden">
+            <div class="shutdown-icon">🛑</div>
+            <div class="shutdown-title">Extinction du Raspberry Pi</div>
+            <div class="shutdown-desc">
+                Finalisation de la vidéo en cours et synchronisation de la carte microSD...
+            </div>
+            <div class="status-pill status-battery" style="margin-top: 6px;">
+                💡 Vous pourrez couper le contact dès que la LED verte du Pi s'éteint.
+            </div>
+        </div>
     </div>
 
     <script src="/static/app.js"></script>

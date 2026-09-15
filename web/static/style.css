@@ -817,6 +817,65 @@ select.form-control optgroup {
     transition: opacity 0.3s ease;
 }
 
+/* Bouton Power Header */
+.btn-power-circle {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: var(--accent-red);
+    font-size: 1.15rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    padding: 0;
+}
+
+.btn-power-circle:hover,
+.btn-power-circle:active {
+    background: var(--accent-red);
+    color: #fff;
+    box-shadow: 0 0 14px var(--accent-red-glow);
+    transform: scale(1.06);
+}
+
+/* Overlay plein écran lors de l'arrêt */
+.shutdown-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(11, 15, 25, 0.95);
+    backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    text-align: center;
+    padding: 24px;
+    gap: 14px;
+}
+
+.shutdown-icon {
+    font-size: 3.5rem;
+    animation: pulse 1.5s infinite;
+}
+
+.shutdown-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.shutdown-desc {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    max-width: 320px;
+    line-height: 1.5;
+}
+
 .hidden {
     display: none !important;
 }

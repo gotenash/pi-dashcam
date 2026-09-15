@@ -37,6 +37,9 @@ except ImportError:
             "SHUTDOWN_DELAY_SEC": 30,
             "MAX_DISK_USAGE_PERCENT": 85,
             "VIDEO_ROTATION": 0,
+            "ENABLE_AUTO_SHUTDOWN": 1,
+            "PARKING_SHUTDOWN_BATTERY_PERCENT": 85,
+            "PARKING_MAX_DURATION_SEC": 600,
         }
     MAX17040 = None
 
@@ -79,6 +82,46 @@ def get_service_status(service_name: str) -> bool:
         return res.stdout.strip() == "active"
     except Exception:
         return False
+
+
+def get_hotspot_status() -> dict:
+    """Retourne l'état actuel du point d'accès Wi-Fi."""
+    con_name = "Pi-Dashcam-Hotspot"
+    ssid = CONFIG.get("HOTSPOT_SSID", "Pi-Dashcam")
+    ip = CONFIG.get("HOTSPOT_IP", "192.168.4.1")
+    try:
+        res = subprocess.run(
+            ["nmcli", "-t", "-f", "NAME,TYPE,STATE", "connection", "show", "--active"],
+            capture_output=True,
+            text=True,
+            timeout=3
+        )
+        for line in res.stdout.strip().splitlines():
+            parts = line.split(":")
+            if len(parts) >= 2 and parts[1] == "802-11-wireless":
+                if parts[0] in (con_name, "Hotspot"):
+                    return {
+                        "active": True,
+                        "ssid": ssid,
+                        "ip": ip,
+                        "mode": "hotspot"
+                    }
+                else:
+                    return {
+                        "active": False,
+                        "ssid": ssid,
+                        "ip": ip,
+                        "mode": "client",
+                        "client_ssid": parts[0]
+                    }
+    except Exception:
+        pass
+    return {
+        "active": False,
+        "ssid": ssid,
+        "ip": ip,
+        "mode": "disconnected"
+    }
 
 
 def get_disk_statistics(storage_dir: str):
@@ -133,6 +176,7 @@ def api_status():
     cpu_temp = get_cpu_temperature()
     is_recording = get_service_status("dashcam.service")
     is_power_mon = get_service_status("power-monitor.service")
+    hotspot_info = get_hotspot_status()
 
     return jsonify({
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -146,6 +190,7 @@ def api_status():
             "disk": disk,
             "recording": is_recording,
             "power_monitor": is_power_mon,
+            "hotspot": hotspot_info,
         }
     })
 
@@ -633,6 +678,9 @@ def api_config():
         "SHUTDOWN_DELAY_SEC": int,
         "MAX_DISK_USAGE_PERCENT": int,
         "VIDEO_ROTATION": int,
+        "ENABLE_AUTO_SHUTDOWN": int,
+        "PARKING_SHUTDOWN_BATTERY_PERCENT": int,
+        "PARKING_MAX_DURATION_SEC": int,
     }
 
     try:
@@ -667,6 +715,12 @@ def api_config():
         global CONFIG
         CONFIG = load_config()
 
+        # Recharger power-monitor pour appliquer les seuils batterie immédiatement
+        try:
+            subprocess.run(["systemctl", "restart", "power-monitor.service"], check=False, timeout=5)
+        except Exception:
+            pass
+
         return jsonify({"success": True, "message": "Configuration sauvegardée"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -691,6 +745,59 @@ def api_toggle_dashcam():
         subprocess.run(["systemctl", target_action, "dashcam.service"], check=True, timeout=10)
         new_state = get_service_status("dashcam.service")
         return jsonify({"success": True, "recording": new_state})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/hotspot/status")
+def api_hotspot_status():
+    """Retourne l'état actuel du Point d'Accès Wi-Fi."""
+    return jsonify(get_hotspot_status())
+
+
+@app.route("/api/hotspot/toggle", methods=["POST"])
+def api_toggle_hotspot():
+    """Active ou désactive le Point d'Accès Wi-Fi."""
+    data = request.json or {}
+    target_action = data.get("action")  # 'enable', 'disable', ou None pour toggle
+    con_name = "Pi-Dashcam-Hotspot"
+    current_status = get_hotspot_status()
+    should_enable = not current_status["active"] if target_action is None else (target_action == "enable")
+
+    try:
+        if should_enable:
+            subprocess.run(["rfkill", "unblock", "wifi"], capture_output=True, text=True, timeout=5)
+            subprocess.run(["nmcli", "connection", "up", con_name], capture_output=True, text=True, timeout=10)
+        else:
+            subprocess.run(["nmcli", "connection", "down", con_name], capture_output=True, text=True, timeout=10)
+
+        new_status = get_hotspot_status()
+        return jsonify({"success": True, "hotspot": new_status})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/action/shutdown", methods=["POST"])
+def api_shutdown():
+    """Arrête proprement le Raspberry Pi (sauvegarde vidéo, sync et poweroff)."""
+    try:
+        def do_shutdown():
+            time.sleep(1.2)  # Laisser le temps à la réponse HTTP de parvenir au smartphone
+            try:
+                subprocess.run(["systemctl", "stop", "dashcam.service"], check=False, timeout=15)
+            except Exception:
+                pass
+            try:
+                os.sync()
+            except Exception:
+                pass
+            subprocess.run(["shutdown", "-h", "now"], check=False)
+
+        threading.Thread(target=do_shutdown, daemon=True).start()
+        return jsonify({
+            "success": True,
+            "message": "Extinction propre du Raspberry Pi initiée..."
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
