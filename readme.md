@@ -24,6 +24,10 @@ Système de **dashcam automobile embarquée autonome et connectée**, conçu pou
 
 ## 🎯 Vue d'ensemble
 
+<p align="center">
+  <img src="img/pidashcam_tableau%20de%20bord.jpg" width="320" alt="Tableau de bord Pi-Dashcam" style="border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);">
+</p>
+
 Pi-Dashcam transforme un Raspberry Pi Zero 2 W en une caméra de bord moderne, fiable et intuitive :
 - **Démarrage automatique au contact** : dès que la voiture met le contact (alimentation USB 5V), le Pi s'allume et commence à filmer automatiquement.
 - **Enregistrement continu en conteneur fMP4 (Fragmented MP4)** : découpage en séquences régulières (ex. 3 minutes, 1080p @ 30 fps) sans aucune coupure entre les clips. Grâce au format fMP4, les vidéos sont lisibles immédiatement sur smartphone et **100% résistantes aux coupures de courant**.
@@ -181,18 +185,38 @@ Grâce aux micro-billes d'encre électronique bistables, cet écran **reste affi
 
 ## 📱 Connexion Smartphone & Dashboard Web
 
-Aucune application mobile n'est requise. Tout se pilote depuis le navigateur web de votre smartphone.
+Aucune application mobile n'est requise. Tout se pilote directement depuis le navigateur web de votre smartphone (Chrome, Safari, Firefox).
 
 ### 1. Connexion au Wi-Fi de la Dashcam
 - **Nom du réseau (SSID)** : `Pi-Dashcam`
 - **Mot de passe** : `dashcam1234`
-- **Adresse du dashboard** : **`http://10.42.0.1:5000`** (ou `http://192.168.4.1:5000`)
+- **Accès direct au dashboard** : **`http://192.168.4.1`** (ou `http://pidashcam.local` / port `5000`)
+- **Coexistence 4G/5G** : Grâce à la configuration DHCP sans passerelle, votre smartphone **conserve sa connexion 4G/5G active pour Internet** (Waze, Google Maps, Spotify et messageries continuent de fonctionner sans interruption en roulant).
 
-### 2. Fonctionnalités de l'Interface Mobile :
-- 📊 **Tableau de bord** : Télémétrie en temps réel (mise à jour toutes les 3s) avec tension batterie, badge `⚡ USB 5V Branché` / `⚠️ Sur Batterie LiPo`, jauge microSD et température.
-- 📸 **Aide au cadrage** : Capture instantanée avec ligne d'horizon superposée pour orienter la rotule de la caméra face au capot.
-- 🎬 **Galerie Vidéos** : Lecteur HTML5 intégré avec boutons de téléchargement direct sur la pellicule du smartphone et suppression de clips.
-- ⚙️ **Réglages** : Modification en un clic de la durée des séquences (1, 3, 5 min), de la définition (1080p ou 720p) et du délai d'extinction.
+---
+
+### 2. Aperçu & Fonctionnalités de l'Interface
+
+#### 📊 Tableau de bord & 📸 Aide au cadrage
+
+| 📊 Tableau de bord | 📸 Aide au cadrage |
+| :---: | :---: |
+| <img src="img/pidashcam_tableau%20de%20bord.jpg" width="300" alt="Tableau de bord Pi-Dashcam"> | <img src="img/pidashcam_cadrage%201%20sur2.jpg" width="300" alt="Aide au cadrage"> |
+| **Télémétrie en direct**<br>Statut d'enregistrement, tension et pourcentage batterie UPS, jauge d'espace MicroSD libre, température CPU et bouton d'extinction rapide. | **Aperçu vidéo en direct (10 fps)**<br>Ligne d'horizon superposée pour orienter et aligner la caméra sur le pare-brise. S'arrête automatiquement pour préserver le CPU. |
+
+#### 🎬 Galerie Vidéos & 🛑 Extinction Sécurisée
+
+| 🎬 Clips & Vidéos Enregistrées | 🛑 Dialogue d'Extinction Sécurisée |
+| :---: | :---: |
+| <img src="img/pidashcam_Vidéos.jpg" width="300" alt="Galerie Vidéos"> | <img src="img/pidashcam_extinction.jpg" width="300" alt="Extinction du système"> |
+| **Lecteur et gestionnaire de clips fMP4**<br>Visualisation immédiate dans le navigateur, téléchargement direct sur la pellicule du smartphone et suppression de clips sans retirer la carte MicroSD. | **Arrêt sécurisé en un clic**<br>Boîte de dialogue de confirmation pour clôturer le flux vidéo proprement, vider les tampons disques (`sync`) et éteindre le Pi sans risque de corruption. |
+
+#### ⚙️ Page de Configuration & Réglages
+
+| ⚙️ Réglages Vidéo & Système | 🔋 Surveillance Parking & Wi-Fi |
+| :---: | :---: |
+| <img src="img/pidashcam_réglages%201%20sur%202.jpg" width="300" alt="Réglages vidéo"> | <img src="img/pidashcam_réglages%202%20sur%202.jpg" width="300" alt="Réglages batterie et parking"> |
+| **Paramètres de capture**<br>Définition vidéo (1080p ou 720p), orientation (0°, 180° tête en bas, 90°/270°), durée des segments (1 à 5 min) et seuil de purge automatique du disque. | **Gestion de l'énergie & Hotspot**<br>Activation de l'extinction sur batterie, seuil d'arrêt en mode parking et activation / désactivation du Point d'accès Wi-Fi. |
 
 ---
 
