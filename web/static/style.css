@@ -115,6 +115,29 @@ body {
     100% { transform: scale(0.9); opacity: 0.6; }
 }
 
+/* Bouton d'extinction dans l'en-tête */
+.btn-power-circle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: var(--accent-red);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    padding: 0;
+}
+
+.btn-power-circle:hover,
+.btn-power-circle:active {
+    background: rgba(239, 68, 68, 0.28);
+    border-color: var(--accent-red);
+    transform: scale(1.06);
+}
+
 /* Tabs Navigation */
 .nav-tabs {
     display: flex;

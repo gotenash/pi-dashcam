@@ -56,6 +56,25 @@ def get_font(size=12, bold=False):
     return ImageFont.load_default()
 
 
+def get_text_width(draw, text, font) -> int:
+    """Calcule la largeur en pixels d'un texte de manière robuste."""
+    if hasattr(draw, "textlength"):
+        try:
+            return int(draw.textlength(text, font=font))
+        except Exception:
+            pass
+    try:
+        bbox = font.getbbox(text)
+        return int(bbox[2] - bbox[0])
+    except Exception:
+        pass
+    try:
+        return int(font.getlength(text))
+    except Exception:
+        pass
+    return len(text) * 7
+
+
 class EPaperDashboard:
     def __init__(self):
         self.config = load_config()
@@ -92,12 +111,13 @@ class EPaperDashboard:
         except Exception:
             return False
 
-    def get_cpu_temp(self) -> float:
+    def get_cpu_temp(self) -> str:
         try:
             with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
-                return round(float(f.read().strip()) / 1000.0, 1)
+                temp_milli = int(f.read().strip())
+                return f"{round(temp_milli / 1000.0, 1)}"
         except Exception:
-            return 40.0
+            return "42.5"
 
     def get_ip_address(self) -> str:
         """Récupère l'adresse IP active du Pi."""
@@ -151,47 +171,66 @@ class EPaperDashboard:
         ip_addr = self.get_ip_address()
         now_str = datetime.now().strftime("%H:%M")
 
-        # --- BANDEAU SUPÉRIEUR ---
+        # --- BANDEAU SUPÉRIEUR (y=4..24) ---
         if is_rec:
             # Badge REC inversé noir
-            draw.rounded_rectangle([(4, 4), (88, 24)], radius=4, fill=0)
+            draw.rounded_rectangle([(4, 4), (82, 23)], radius=3, fill=0)
             draw.text((10, 6), "● REC", font=self.font_med, fill=255)
         else:
-            draw.rounded_rectangle([(4, 4), (88, 24)], radius=4, outline=0, width=1)
+            draw.rounded_rectangle([(4, 4), (82, 23)], radius=3, outline=0, width=1)
             draw.text((10, 6), "⏸ PAUSE", font=self.font_med, fill=0)
 
-        # Heure & Nom
-        draw.text((100, 6), "PI-DASHCAM", font=self.font_med, fill=0)
-        draw.text((205, 6), now_str, font=self.font_med, fill=0)
+        # Titre central
+        draw.text((92, 6), "PI-DASHCAM", font=self.font_med, fill=0)
 
-        # Ligne de séparation
-        draw.line([(4, 28), (246, 28)], fill=0, width=1)
+        # Heure calée à droite
+        time_w = get_text_width(draw, now_str, self.font_med)
+        draw.text((246 - time_w, 6), now_str, font=self.font_med, fill=0)
 
-        # --- LIGNE 1 : RÉSEAU & ALIMENTATION ---
-        # Wi-Fi / IP
-        draw.text((6, 34), f"WiFi : {ip_addr}", font=self.font_med, fill=0)
+        # Ligne de séparation supérieure
+        draw.line([(4, 26), (246, 26)], fill=0, width=1)
 
-        # Batterie
-        power_icon = "⚡" if ext_power else "🔋"
-        bat_str = f"{power_icon} {int(percent)}% ({voltage}V)"
-        draw.text((140, 34), bat_str, font=self.font_med, fill=0)
+        # --- LIGNE 1 : RÉSEAU & CPU (y=29..43) ---
+        net_label = f"IP: {ip_addr}"
+        font_ip = self.font_sm if get_text_width(draw, net_label, self.font_med) > 145 else self.font_med
+        draw.text((6, 30), net_label, font=font_ip, fill=0)
 
-        # Ligne de séparation discrète
-        draw.line([(4, 56), (246, 56)], fill=0, width=1)
+        cpu_str = f"CPU: {cpu_temp}°C"
+        cpu_w = get_text_width(draw, cpu_str, self.font_med)
+        draw.text((246 - cpu_w, 30), cpu_str, font=self.font_med, fill=0)
 
-        # --- LIGNE 2 : ESPACE DISQUE ---
-        draw.text((6, 62), f"MicroSD : {free_gb}Go libres ({disk_pct}%)", font=self.font_med, fill=0)
+        # --- LIGNE 2 : BATTERIE & ALIMENTATION (y=46..60) ---
+        bat_str = f"Bat: {int(percent)}% ({voltage}V)"
+        draw.text((6, 47), bat_str, font=self.font_med, fill=0)
+
+        pwr_tag = "[USB ⚡]" if ext_power else "[BAT]"
+        pwr_w = get_text_width(draw, pwr_tag, self.font_med)
+        draw.text((246 - pwr_w, 47), pwr_tag, font=self.font_med, fill=0)
+
+        # Ligne de séparation médiane
+        draw.line([(4, 63), (246, 63)], fill=0, width=1)
+
+        # --- LIGNE 3 : ESPACE DISQUE (y=66..89) ---
+        draw.text((6, 66), f"SD: {free_gb}Go libres ({disk_pct}% plein)", font=self.font_med, fill=0)
 
         # Jauge horizontale d'espace disque
-        draw.rectangle([(6, 80), (244, 90)], outline=0, width=1)
+        draw.rectangle([(6, 81), (244, 89)], outline=0, width=1)
         fill_width = int(6 + ((244 - 6) * (disk_pct / 100.0)))
         if fill_width > 6:
-            draw.rectangle([(6, 80), (fill_width, 90)], fill=0)
+            draw.rectangle([(6, 81), (min(fill_width, 244), 89)], fill=0)
 
-        # --- BANDEAU INFÉRIEUR ---
-        draw.line([(4, 96), (246, 96)], fill=0, width=1)
-        draw.text((6, 102), f"Temp CPU : {cpu_temp}°C", font=self.font_sm, fill=0)
-        draw.text((150, 102), "1080p H.264 30fps", font=self.font_sm, fill=0)
+        # Ligne de séparation inférieure
+        draw.line([(4, 93), (246, 93)], fill=0, width=1)
+
+        # --- BANDEAU INFÉRIEUR (y=97..118) ---
+        rot = self.config.get("VIDEO_ROTATION", 0)
+        mode_str = f"1080p 30fps (rot {rot}°)"
+        draw.text((6, 99), mode_str, font=self.font_sm, fill=0)
+
+        delay_sec = self.config.get("SHUTDOWN_DELAY_SEC", 30)
+        status_sub = f"AutoStop: {delay_sec}s"
+        sub_w = get_text_width(draw, status_sub, self.font_sm)
+        draw.text((246 - sub_w, 99), status_sub, font=self.font_sm, fill=0)
 
         return image
 

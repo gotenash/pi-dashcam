@@ -102,11 +102,16 @@ cp "$SCRIPT_DIR/systemd/dashcam.service" /etc/systemd/system/dashcam.service
 cp "$SCRIPT_DIR/systemd/power-monitor.service" /etc/systemd/system/power-monitor.service
 cp "$SCRIPT_DIR/systemd/dashcam-web.service" /etc/systemd/system/dashcam-web.service
 cp "$SCRIPT_DIR/systemd/dashcam-epaper.service" /etc/systemd/system/dashcam-epaper.service
+cp "$SCRIPT_DIR/systemd/dashcam-autohotspot.service" /etc/systemd/system/dashcam-autohotspot.service
+
+# Configuration du Hotspot sans passerelle et redirection port 80
+/usr/local/bin/setup_hotspot.sh enable || true
 
 systemctl daemon-reload
 systemctl enable --now dashcam.service
 systemctl enable --now dashcam-web.service
 systemctl enable --now dashcam-epaper.service
+systemctl enable --now dashcam-autohotspot.service
 
 # SÉCURITÉ : power-monitor est volontairement désactivé par défaut
 # pour éviter toute extinction intempestive sur le bureau sans UPS-Lite

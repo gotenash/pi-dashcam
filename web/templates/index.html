@@ -22,8 +22,11 @@
                     <span class="pulse-dot"></span>
                     <span id="rec-text">REC</span>
                 </div>
-                <button id="btn-header-power" class="btn-power-circle" title="Éteindre le Raspberry Pi" onclick="shutdownSystem()">
-                    ⏻
+                <button id="btn-header-power" class="btn-power-circle" title="Éteindre le Raspberry Pi" onclick="shutdownSystem()" aria-label="Éteindre">
+                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                        <line x1="12" y1="2" x2="12" y2="12"></line>
+                    </svg>
                 </button>
             </div>
         </header>
@@ -164,7 +167,7 @@
                         <span id="snapshot-time" class="snapshot-time">Mode direct prêt</span>
                     </div>
                     <p class="card-tip">
-                        💡 Cliquez sur <strong>Démarrer le Direct</strong> pour orienter votre caméra en temps réel. Lorsque vous avez terminé, cliquez sur <strong>Arrêter</strong> ou changez d'onglet pour reprendre l'enregistrement à 0% CPU.
+                        💡 Cliquez sur <strong>Démarrer le Direct</strong> pour orienter votre caméra en temps réel. Lorsque vous avez terminé, cliquez sur <strong>Arrêter</strong> ou changez d'onglet pour fermer l'aperçu et libérer la caméra.
                     </p>
                 </div>
             </section>

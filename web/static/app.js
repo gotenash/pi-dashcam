@@ -509,7 +509,10 @@ async function stopCadrageMode() {
     try {
         await fetch("/api/cadrage/stop", { method: "POST" });
         updateCadrageUI(false);
-        showToast("Enregistrement dashcam repris (0% CPU)");
+        showToast("Mode cadrage arrêté");
+        if (typeof fetchStatus === "function") {
+            fetchStatus();
+        }
     } catch (err) {
         console.warn("Erreur lors de l'arrêt du cadrage:", err);
         updateCadrageUI(false);
@@ -551,7 +554,7 @@ function updateCadrageUI(active) {
         if (text) text.textContent = "Démarrer le Direct";
         if (liveInd) liveInd.classList.add("hidden");
         if (standbyInd) standbyInd.classList.remove("hidden");
-        if (timeEl) timeEl.textContent = "Mode veille (Dashcam enregistre à 0% CPU)";
+        if (timeEl) timeEl.textContent = "Mode veille";
     }
 }
 
@@ -644,8 +647,8 @@ async function saveConfig(event) {
         const data = await res.json();
         if (data.success) {
             showToast("Réglages enregistrés avec succès !");
-            if (confirm("Réglages enregistrés ! Voulez-vous redémarrer l'enregistrement vidéo pour appliquer la nouvelle orientation immédiatement ?")) {
-                restartDashcamServiceDirect();
+            if (typeof fetchStatus === "function") {
+                fetchStatus();
             }
         } else {
             showToast(data.error || "Erreur de sauvegarde", true);

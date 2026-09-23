@@ -354,7 +354,7 @@ def _auto_stop_cadrage():
 
 
 def _stop_cadrage_internal():
-    """Arrête le sous-processus de cadrage et relance l'enregistrement dashcam."""
+    """Arrête le sous-processus de cadrage et libère le capteur caméra."""
     global cadrage_process, cadrage_timer
     if cadrage_timer:
         try:
@@ -373,12 +373,6 @@ def _stop_cadrage_internal():
             except Exception:
                 pass
         cadrage_process = None
-
-    # Relancer dashcam.service
-    try:
-        subprocess.run(["systemctl", "start", "dashcam.service"], timeout=5)
-    except Exception:
-        pass
 
 
 @app.route("/api/cadrage/start", methods=["POST"])
@@ -806,6 +800,20 @@ def main():
     cfg = load_config()
     port = int(cfg.get("WEB_PORT", 5000))
     host = cfg.get("WEB_HOST", "0.0.0.0")
+
+    # Écoute automatique sur le port standard HTTP (80) en plus du port configuré (5000)
+    # Permet de taper directement 192.168.4.1 dans le navigateur sans :5000
+    if port != 80:
+        def start_port_80():
+            try:
+                from werkzeug.serving import run_simple
+                print("Écoute HTTP active sur le port 80 (accès direct sans :5000)")
+                run_simple(host, 80, app, threaded=True)
+            except Exception as e:
+                print(f"Port 80 non disponible (droits root requis ou port occupé): {e}")
+
+        threading.Thread(target=start_port_80, daemon=True).start()
+
     print(f"Démarrage de l'interface mobile Pi-Dashcam sur http://{host}:{port}")
     app.run(host=host, port=port, debug=False)
 
